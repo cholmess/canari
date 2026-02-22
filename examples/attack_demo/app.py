@@ -4,12 +4,22 @@ import argparse
 import os
 import time
 from datetime import timezone
+from pathlib import Path
+import sys
 
-import canari
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+
+try:
+    import canari
+except ModuleNotFoundError:
+    # Allow running this demo directly from a fresh repo clone.
+    repo_root = Path(__file__).resolve().parents[2]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+    import canari
 
 
 ATTACK_PROMPT = (

@@ -1,4 +1,3 @@
-canari
 openai>=1.0.0
 rich>=13.7.0
 python-dotenv>=1.0.0
