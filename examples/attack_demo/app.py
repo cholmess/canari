@@ -126,7 +126,11 @@ def main() -> int:
     console.print("Type your prompt as an attacker. Press Enter to use the default injection payload.")
     console.print()
 
-    user_prompt = input("You (attacker) > ").strip() or ATTACK_PROMPT
+    try:
+        user_prompt = input("You (attacker) > ").strip() or ATTACK_PROMPT
+    except EOFError:
+        # Allow non-interactive runs (CI/piped execution) to use the default attack prompt.
+        user_prompt = ATTACK_PROMPT
     messages = _build_messages(context_blob, user_prompt)
     if offline:
         output = _offline_model_output(context_blob, user_prompt)
