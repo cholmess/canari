@@ -1,5 +1,7 @@
 # Canari
 
+Your LLM was just attacked. Canari knew before you did.
+
 Canari is an intrusion-detection library for LLM apps. It injects synthetic decoy tokens into context and emits high-signal alerts when those tokens appear in model outputs.
 
 ## 60-second quickstart
