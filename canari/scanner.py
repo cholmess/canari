@@ -20,6 +20,7 @@ class OutputScanner:
         self.registry = registry
         self._token_index: dict[str, CanaryToken] = {}
         self._automaton = None
+        self._registry_signature = ""
         self.analyzer = ExfiltrationAnalyzer()
         self._rebuild_index()
 
@@ -28,12 +29,19 @@ class OutputScanner:
         self._automaton = None
         if ahocorasick is not None:
             self._automaton = ahocorasick.Automaton()
-        for token in self.registry.list_active():
+        active_tokens = self.registry.list_active()
+        for token in active_tokens:
             self._token_index[token.value] = token
             if self._automaton is not None:
                 self._automaton.add_word(token.value, token.value)
         if self._automaton is not None:
             self._automaton.make_automaton()
+        self._registry_signature = self._signature(active_tokens)
+
+    @staticmethod
+    def _signature(tokens: list[CanaryToken]) -> str:
+        # Stable signature for drift detection of active token set.
+        return "|".join(sorted(f"{t.id}:{t.active}:{t.value}" for t in tokens))
 
     def _severity_for(self, token: CanaryToken, hit_count: int) -> AlertSeverity:
         assessment = self.analyzer.assess(token, "", hit_count)
@@ -41,6 +49,11 @@ class OutputScanner:
 
     def scan(self, output: str, context: dict | None = None) -> list[AlertEvent]:
         context = context or {}
+        active_tokens = self.registry.list_active()
+        sig = self._signature(active_tokens)
+        if sig != self._registry_signature:
+            self._rebuild_index()
+
         hits: list[CanaryToken] = []
         seen = set()
         if self._automaton is not None:
