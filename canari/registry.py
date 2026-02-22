@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from canari.models import AlertEvent, AlertSeverity, CanaryToken, InjectionStrategy, TokenType
@@ -222,6 +222,15 @@ class CanaryRegistry:
             "by_severity": {row["severity"]: row["c"] for row in by_severity},
             "by_surface": {row["detection_surface"]: row["c"] for row in by_surface},
         }
+
+    def purge_alerts_older_than(self, *, days: int) -> int:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=max(0, days))
+        with self._connect() as conn:
+            cur = conn.execute(
+                "DELETE FROM alert_events WHERE triggered_at < ?",
+                (cutoff.isoformat(),),
+            )
+            return cur.rowcount
 
     @staticmethod
     def _row_to_token(row: sqlite3.Row) -> CanaryToken:

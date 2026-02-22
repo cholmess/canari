@@ -126,13 +126,22 @@ class CanariClient:
             raise TypeError("client must expose request(method, url, **kwargs)")
         original_request = client.request
 
-        def wrapped_request(method, url, **kwargs):
-            headers = kwargs.get("headers")
-            body = kwargs.get("json", kwargs.get("data"))
-            self.monitor_http_request(method, url, headers=headers, body=body)
-            return original_request(method, url, **kwargs)
+        if asyncio.iscoroutinefunction(original_request):
+            async def wrapped_request(method, url, **kwargs):
+                headers = kwargs.get("headers")
+                body = kwargs.get("json", kwargs.get("data"))
+                self.monitor_http_request(method, url, headers=headers, body=body)
+                return await original_request(method, url, **kwargs)
 
-        client.request = wrapped_request
+            client.request = wrapped_request
+        else:
+            def wrapped_request(method, url, **kwargs):
+                headers = kwargs.get("headers")
+                body = kwargs.get("json", kwargs.get("data"))
+                self.monitor_http_request(method, url, headers=headers, body=body)
+                return original_request(method, url, **kwargs)
+
+            client.request = wrapped_request
         return client
 
     def registry_stats(self) -> dict:
@@ -157,6 +166,9 @@ class CanariClient:
 
     def alert_stats(self) -> dict:
         return self.registry.alert_stats()
+
+    def purge_alerts_older_than(self, *, days: int) -> int:
+        return self.registry.purge_alerts_older_than(days=days)
 
     def forensic_summary(self, limit: int = 5000) -> dict:
         return self.reporter.forensic_summary(limit=limit)

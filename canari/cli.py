@@ -36,6 +36,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_export.add_argument("--conversation", default=None)
     p_export.add_argument("--incident", default=None)
 
+    p_purge = sub.add_parser("purge-alerts", help="Delete old alert events from local journal")
+    p_purge.add_argument("--older-than-days", type=int, required=True)
+
     return parser
 
 
@@ -87,6 +90,10 @@ def main(argv: list[str] | None = None) -> int:
                 incident_id=args.incident,
             )
         print(json.dumps({"exported": n, "path": args.out, "format": args.format}))
+        return 0
+    if args.cmd == "purge-alerts":
+        removed = honey.purge_alerts_older_than(days=args.older_than_days)
+        print(json.dumps({"removed": removed, "older_than_days": args.older_than_days}))
         return 0
 
     parser.error("unknown command")

@@ -38,6 +38,7 @@ print(alerts)
 - Forensic reporting (`forensic_summary`, `incident_report`)
 - Export helpers (`export_alerts_jsonl`, `export_alerts_csv`)
 - Built-in CLI (`python -m canari`)
+- Alert journal retention (`purge_alerts_older_than`)
 
 ## Integration patterns
 
@@ -178,6 +179,7 @@ python -m canari --db canari.db alert-stats
 python -m canari --db canari.db alerts --limit 20 --severity critical
 python -m canari --db canari.db incidents --limit 20
 python -m canari --db canari.db export --format jsonl --out /tmp/canari-alerts.jsonl
+python -m canari --db canari.db purge-alerts --older-than-days 30
 ```
 
 ## CI and release checks
