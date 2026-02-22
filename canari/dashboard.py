@@ -141,7 +141,11 @@ def _make_handler(registry: CanaryRegistry, reporter: ForensicReporter, api_toke
                 return self._send_json({"ok": False, "error": "unauthorized"}, status=401)
             if parsed.path == "/api/summary":
                 limit = _as_int(qs.get("limit", ["5000"])[0], 5000)
-                payload = reporter.forensic_summary(limit=limit)
+                payload = reporter.forensic_summary(
+                    limit=limit,
+                    tenant_id=_first(qs, "tenant"),
+                    application_id=_first(qs, "app"),
+                )
                 payload["version"] = _VERSION
                 return self._send_json(payload)
             if parsed.path == "/api/alerts":
@@ -155,11 +159,16 @@ def _make_handler(registry: CanaryRegistry, reporter: ForensicReporter, api_toke
                     since=_first(qs, "since"),
                     until=_first(qs, "until"),
                     tenant_id=_first(qs, "tenant"),
+                    application_id=_first(qs, "app"),
                 )
                 return self._send_json([a.model_dump(mode="json") for a in alerts])
             if parsed.path == "/api/incidents":
                 limit = _as_int(qs.get("limit", ["20"])[0], 20)
-                incidents = reporter.registry.list_alerts(limit=5000)
+                incidents = reporter.registry.list_alerts(
+                    limit=5000,
+                    tenant_id=_first(qs, "tenant"),
+                    application_id=_first(qs, "app"),
+                )
                 grouped = {}
                 for a in incidents:
                     if not a.incident_id:

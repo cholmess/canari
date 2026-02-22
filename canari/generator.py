@@ -110,6 +110,8 @@ class CanaryGenerator:
         injection_strategy: InjectionStrategy | None = None,
         injection_location: str = "unassigned",
         metadata: dict | None = None,
+        tenant_id: str | None = None,
+        application_id: str | None = None,
     ) -> CanaryToken:
         token_id = str(uuid.uuid4())
         value = _GENERATORS[token_type](token_id)
@@ -121,6 +123,8 @@ class CanaryGenerator:
             injection_location=injection_location,
             injection_timestamp=datetime.now(timezone.utc),
             metadata=metadata or {},
+            tenant_id=tenant_id,
+            application_id=application_id,
         )
 
     def generate_many(
@@ -130,6 +134,8 @@ class CanaryGenerator:
         injection_strategy: InjectionStrategy | None = None,
         injection_location: str = "unassigned",
         metadata: dict | None = None,
+        tenant_id: str | None = None,
+        application_id: str | None = None,
     ) -> list[CanaryToken]:
         return [
             self.generate(
@@ -137,6 +143,8 @@ class CanaryGenerator:
                 injection_strategy=injection_strategy,
                 injection_location=injection_location,
                 metadata=metadata,
+                tenant_id=tenant_id,
+                application_id=application_id,
             )
             for token_type in token_types
         ]

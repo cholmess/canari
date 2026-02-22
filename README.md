@@ -44,15 +44,21 @@ print(alerts)
 - Local threat-intel feed (`threat-feed`)
 - Opt-in threat-sharing controls (`threat-share`)
 - Shared signature import + local/network matching (`threat-import`, `network-signatures`, `threat-matches`)
+- Transparency report and attack-pattern library (`threat-transparency`, `attack-patterns`)
 - Webhook integrity signing (`signing_secret` -> `X-Canari-Signature`)
 - Default tenant context (`set_default_tenant`) for multi-tenant apps
+- Default application context (`set_default_application`) for multi-app deployments
+- Scoped canary generation by tenant/app (`seed --tenant/--app`)
 - Administrative audit log (`audit-log`)
 - FastAPI backend option (`serve-api`)
 - Persisted API key management (`api-keys add/list/revoke`)
+- API key scoping by tenant and application (`tenant_id`, `application_id`)
 - API key rotation (`api-keys rotate`) and `last_used_at` tracking
 - FastAPI admin endpoints for API key management (`/v1/api-keys*`)
 - Persisted retention policy (`policy set --retention-days`, `apply-retention`)
 - SIEM-oriented normalized event export (`siem-export`, `/v1/siem/events`)
+- CEF export for SIEM connectors (`siem-export --format cef`, `/v1/siem/cef`)
+- Scoped alert-stat snapshots (`alert-stats --tenant/--app`, `/v1/alert-stats`)
 
 ## Integration patterns
 
@@ -225,10 +231,12 @@ CLI usage:
 canari --db canari.db token-stats
 canari --db canari.db --compact token-stats
 canari --db canari.db alert-stats
+canari --db canari.db alert-stats --tenant acme-prod --app support-assistant
 canari --db canari.db alerter-health
 canari --db canari.db audit-log --limit 50 --offset 0
 canari --db canari.db api-keys add --name ops --key supersecret --role admin
 canari --db canari.db api-keys add --name tenant-reader --key tenantsecret --role reader --tenant acme-prod
+canari --db canari.db api-keys add --name app-reader --key appsecret --role reader --app support-assistant
 canari --db canari.db api-keys list
 canari --db canari.db api-keys revoke --id 1
 canari --db canari.db api-keys rotate --id 2 --new-key brandnewsecret
@@ -236,12 +244,15 @@ canari --db canari.db doctor
 canari --db canari.db policy show
 canari --db canari.db policy set --min-severity high --rate-window 120 --rate-max 4 --retention-days 30
 canari --db canari.db apply-retention
+canari --db canari.db apply-retention --app support-assistant
 canari --db canari.db seed --n 5 --types api_key,email,stripe_key
+canari --db canari.db seed --n 3 --types api_key --tenant acme-prod --app support-assistant
 canari --db canari.db rotate-canaries --n 5 --types api_key,email
 canari --db canari.db alerts --limit 20 --severity critical
 canari --db canari.db alerts --limit 20 --offset 20
 canari --db canari.db alerts --incident inc-conv-123-456
 canari --db canari.db alerts --tenant acme-prod --limit 50
+canari --db canari.db alerts --app support-assistant --limit 50
 canari --db canari.db alerts --since 2026-02-01T00:00:00+00:00 --until 2026-02-28T23:59:59+00:00
 canari --db canari.db incidents --limit 20
 canari --db canari.db forensic-summary --limit 5000
@@ -251,13 +262,21 @@ canari --db canari.db threat-share enable
 canari --db canari.db threat-import --in /tmp/share-bundle.json --source community
 canari --db canari.db network-signatures --limit 100 --offset 0
 canari --db canari.db threat-matches --local-limit 5000 --network-limit 5000
+canari --db canari.db threat-transparency --local-limit 5000 --network-limit 5000
+canari --db canari.db attack-patterns --local-limit 5000
+canari --db canari.db threat-transparency --local-limit 5000 --network-limit 5000 --out /tmp/canari-transparency.json
+canari --db canari.db attack-patterns --local-limit 5000 --out /tmp/canari-attack-patterns.json
 canari --db canari.db incident-replay --incident inc-conv-123-456 --out /tmp/incident.jsonl
 canari --db canari.db siem-export --limit 1000 --out /tmp/canari-siem.jsonl
+canari --db canari.db siem-export --limit 1000 --app support-assistant --out /tmp/canari-siem-app.jsonl
+canari --db canari.db siem-export --limit 1000 --format cef --out /tmp/canari-siem.cef
 canari --db canari.db scan-text --text "leak sk_test_CANARI_x" --conversation conv-1
 canari --db canari.db export --format jsonl --out /tmp/canari-alerts.jsonl
 canari --db canari.db export --format csv --out /tmp/canari-alerts.csv --since 2026-02-01T00:00:00+00:00
+canari --db canari.db export --format jsonl --out /tmp/canari-alerts-app.jsonl --app support-assistant
 canari --db canari.db export --format jsonl --out /tmp/canari-redacted.jsonl --redact
 canari --db canari.db purge-alerts --older-than-days 30
+canari --db canari.db purge-alerts --older-than-days 30 --tenant acme-prod --app support-assistant
 canari --db canari.db backup-db --out /tmp/canari-backup.db
 canari --db canari.db serve-dashboard --host 127.0.0.1 --port 8080
 canari --db canari.db serve-dashboard --host 127.0.0.1 --port 8080 --api-token secret123

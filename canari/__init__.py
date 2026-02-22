@@ -33,36 +33,68 @@ class CanariClient:
         self.min_dispatch_severity: str | None = None
         self.retention_days: int | None = None
         self.default_tenant_id: str | None = None
+        self.default_application_id: str | None = None
         self.alerter = AlertDispatcher(canari_version=__version__)
         self.alerter.add_stdout()
         self.load_policy()
 
-    def generate(self, n_tokens: int = 1, token_types: list[str] | None = None) -> list[CanaryToken]:
+    def generate(
+        self,
+        n_tokens: int = 1,
+        token_types: list[str] | None = None,
+        *,
+        tenant_id: str | None = None,
+        application_id: str | None = None,
+    ) -> list[CanaryToken]:
         kinds = token_types or [TokenType.API_KEY.value]
         selected = [TokenType(k) for k in kinds]
         tokens = []
         for i in range(n_tokens):
             token_type = selected[i % len(selected)]
-            token = self.generator.generate(token_type)
+            token = self.generator.generate(
+                token_type,
+                tenant_id=tenant_id,
+                application_id=application_id,
+            )
             self.registry.add(token)
             tokens.append(token)
         self.scanner._rebuild_index()
         return tokens
 
-    def rotate_canaries(self, n_tokens: int = 3, token_types: list[str] | None = None) -> dict:
+    def rotate_canaries(
+        self,
+        n_tokens: int = 3,
+        token_types: list[str] | None = None,
+        *,
+        tenant_id: str | None = None,
+        application_id: str | None = None,
+    ) -> dict:
         active = self.registry.list_active()
         deactivated = 0
         for token in active:
             if self.registry.deactivate(token.id):
                 deactivated += 1
         self.scanner._rebuild_index()
-        generated = self.generate(n_tokens=n_tokens, token_types=token_types)
+        generated = self.generate(
+            n_tokens=n_tokens,
+            token_types=token_types,
+            tenant_id=tenant_id,
+            application_id=application_id,
+        )
         report = {
             "deactivated": deactivated,
             "generated": len(generated),
             "active_now": len(self.registry.list_active()),
         }
-        self.registry.record_audit("rotate_canaries", report | {"token_types": token_types or ["api_key"]})
+        self.registry.record_audit(
+            "rotate_canaries",
+            report
+            | {
+                "token_types": token_types or ["api_key"],
+                "tenant_id": tenant_id,
+                "application_id": application_id,
+            },
+        )
         return report
 
     def inject_system_prompt(self, system_prompt: str, canaries: list[CanaryToken], position: str = "end") -> str:
@@ -190,6 +222,7 @@ class CanariClient:
         since: str | None = None,
         until: str | None = None,
         tenant_id: str | None = None,
+        application_id: str | None = None,
     ):
         return self.registry.list_alerts(
             limit=limit,
@@ -201,14 +234,33 @@ class CanariClient:
             since=since,
             until=until,
             tenant_id=tenant_id,
+            application_id=application_id,
         )
 
-    def alert_stats(self) -> dict:
-        return self.registry.alert_stats()
+    def alert_stats(self, *, tenant_id: str | None = None, application_id: str | None = None) -> dict:
+        return self.registry.alert_stats(tenant_id=tenant_id, application_id=application_id)
 
-    def purge_alerts_older_than(self, *, days: int) -> int:
-        removed = self.registry.purge_alerts_older_than(days=days)
-        self.registry.record_audit("purge_alerts", {"days": days, "removed": removed})
+    def purge_alerts_older_than(
+        self,
+        *,
+        days: int,
+        tenant_id: str | None = None,
+        application_id: str | None = None,
+    ) -> int:
+        removed = self.registry.purge_alerts_older_than(
+            days=days,
+            tenant_id=tenant_id,
+            application_id=application_id,
+        )
+        self.registry.record_audit(
+            "purge_alerts",
+            {
+                "days": days,
+                "removed": removed,
+                "tenant_id": tenant_id,
+                "application_id": application_id,
+            },
+        )
         return removed
 
     def backup_db(self, path: str) -> int:
@@ -256,6 +308,12 @@ class CanariClient:
 
     def clear_default_tenant(self) -> None:
         self.default_tenant_id = None
+
+    def set_default_application(self, application_id: str) -> None:
+        self.default_application_id = application_id
+
+    def clear_default_application(self) -> None:
+        self.default_application_id = None
 
     def persist_policy(self) -> None:
         if self.min_dispatch_severity is None:
@@ -325,21 +383,59 @@ class CanariClient:
             raise ValueError("retention days must be > 0")
         self.retention_days = n
 
-    def apply_retention_policy(self) -> dict:
+    def apply_retention_policy(
+        self,
+        *,
+        tenant_id: str | None = None,
+        application_id: str | None = None,
+    ) -> dict:
         if self.retention_days is None:
             return {"applied": False, "removed": 0, "retention_days": None}
-        removed = self.purge_alerts_older_than(days=self.retention_days)
+        removed = self.purge_alerts_older_than(
+            days=self.retention_days,
+            tenant_id=tenant_id,
+            application_id=application_id,
+        )
         self.registry.record_audit(
             "apply_retention_policy",
-            {"retention_days": self.retention_days, "removed": removed},
+            {
+                "retention_days": self.retention_days,
+                "removed": removed,
+                "tenant_id": tenant_id,
+                "application_id": application_id,
+            },
         )
-        return {"applied": True, "removed": removed, "retention_days": self.retention_days}
+        return {
+            "applied": True,
+            "removed": removed,
+            "retention_days": self.retention_days,
+            "tenant_id": tenant_id,
+            "application_id": application_id,
+        }
 
-    def forensic_summary(self, limit: int = 5000) -> dict:
-        return self.reporter.forensic_summary(limit=limit)
+    def forensic_summary(
+        self,
+        limit: int = 5000,
+        tenant_id: str | None = None,
+        application_id: str | None = None,
+    ) -> dict:
+        return self.reporter.forensic_summary(limit=limit, tenant_id=tenant_id, application_id=application_id)
 
-    def siem_events(self, limit: int = 1000, tenant_id: str | None = None) -> list[dict]:
-        return self.reporter.siem_events(limit=limit, tenant_id=tenant_id)
+    def siem_events(
+        self,
+        limit: int = 1000,
+        tenant_id: str | None = None,
+        application_id: str | None = None,
+    ) -> list[dict]:
+        return self.reporter.siem_events(limit=limit, tenant_id=tenant_id, application_id=application_id)
+
+    def siem_cef_events(
+        self,
+        limit: int = 1000,
+        tenant_id: str | None = None,
+        application_id: str | None = None,
+    ) -> list[str]:
+        return self.reporter.siem_cef_events(limit=limit, tenant_id=tenant_id, application_id=application_id)
 
     def incident_report(self, incident_id: str) -> dict:
         return self.reporter.incident_report(incident_id)
@@ -368,6 +464,12 @@ class CanariClient:
     def network_threat_matches(self, *, local_limit: int = 5000, network_limit: int = 5000) -> dict:
         return self.threat_intel.network_matches(local_limit=local_limit, network_limit=network_limit)
 
+    def threat_transparency_report(self, *, local_limit: int = 5000, network_limit: int = 5000) -> dict:
+        return self.threat_intel.transparency_report(local_limit=local_limit, network_limit=network_limit)
+
+    def attack_pattern_library(self, *, local_limit: int = 5000) -> dict:
+        return self.threat_intel.attack_pattern_library(local_limit=local_limit)
+
     def audit_log(self, limit: int = 100, offset: int = 0) -> list[dict]:
         return self.registry.list_audit(limit=limit, offset=offset)
 
@@ -378,11 +480,24 @@ class CanariClient:
         key: str,
         role: str = "reader",
         tenant_id: str | None = None,
+        application_id: str | None = None,
     ) -> dict:
-        out = self.registry.create_api_key(name=name, key=key, role=role, tenant_id=tenant_id)
+        out = self.registry.create_api_key(
+            name=name,
+            key=key,
+            role=role,
+            tenant_id=tenant_id,
+            application_id=application_id,
+        )
         self.registry.record_audit(
             "create_api_key",
-            {"id": out["id"], "name": name, "role": role, "tenant_id": tenant_id},
+            {
+                "id": out["id"],
+                "name": name,
+                "role": role,
+                "tenant_id": tenant_id,
+                "application_id": application_id,
+            },
         )
         return out
 
@@ -417,6 +532,7 @@ class CanariClient:
         until: str | None = None,
         redact: bool = False,
         tenant_id: str | None = None,
+        application_id: str | None = None,
     ) -> int:
         return self.exporter.export_jsonl(
             path,
@@ -429,6 +545,7 @@ class CanariClient:
             until=until,
             redact=redact,
             tenant_id=tenant_id,
+            application_id=application_id,
         )
 
     def export_alerts_csv(
@@ -444,6 +561,7 @@ class CanariClient:
         until: str | None = None,
         redact: bool = False,
         tenant_id: str | None = None,
+        application_id: str | None = None,
     ) -> int:
         return self.exporter.export_csv(
             path,
@@ -456,6 +574,7 @@ class CanariClient:
             until=until,
             redact=redact,
             tenant_id=tenant_id,
+            application_id=application_id,
         )
 
     def recent_incidents(self, limit: int = 50):
@@ -525,9 +644,13 @@ class CanariClient:
         sm = dict(base.get("session_metadata") or {})
         if self.default_tenant_id and not sm.get("tenant_id"):
             sm["tenant_id"] = self.default_tenant_id
+        if self.default_application_id and not sm.get("application_id"):
+            sm["application_id"] = self.default_application_id
         base["session_metadata"] = sm
         if self.default_tenant_id and not base.get("tenant_id"):
             base["tenant_id"] = self.default_tenant_id
+        if self.default_application_id and not base.get("application_id"):
+            base["application_id"] = self.default_application_id
         return base
 
 

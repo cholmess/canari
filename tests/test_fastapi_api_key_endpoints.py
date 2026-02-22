@@ -19,11 +19,18 @@ def test_fastapi_admin_api_key_endpoints(tmp_path):
     r = client.post(
         "/v1/api-keys",
         headers={"X-API-Key": "admin-key"},
-        json={"name": "reader", "key": "reader-key", "role": "reader", "tenant_id": "acme"},
+        json={
+            "name": "reader",
+            "key": "reader-key",
+            "role": "reader",
+            "tenant_id": "acme",
+            "application_id": "helpdesk-app",
+        },
     )
     assert r.status_code == 200
     created = r.json()
     assert created["role"] == "reader"
+    assert created["application_id"] == "helpdesk-app"
 
     r = client.get("/v1/api-keys", headers={"X-API-Key": "admin-key"})
     assert r.status_code == 200

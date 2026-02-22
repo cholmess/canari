@@ -25,6 +25,7 @@ class AlertExporter:
         until: str | None = None,
         redact: bool = False,
         tenant_id: str | None = None,
+        application_id: str | None = None,
     ) -> int:
         alerts = self.registry.list_alerts(
             limit=limit,
@@ -35,6 +36,7 @@ class AlertExporter:
             since=since,
             until=until,
             tenant_id=tenant_id,
+            application_id=application_id,
         )
         out = Path(path)
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -59,6 +61,7 @@ class AlertExporter:
         until: str | None = None,
         redact: bool = False,
         tenant_id: str | None = None,
+        application_id: str | None = None,
     ) -> int:
         alerts = self.registry.list_alerts(
             limit=limit,
@@ -69,6 +72,7 @@ class AlertExporter:
             since=since,
             until=until,
             tenant_id=tenant_id,
+            application_id=application_id,
         )
         out = Path(path)
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -82,6 +86,7 @@ class AlertExporter:
             "detection_surface",
             "conversation_id",
             "tenant_id",
+            "application_id",
             "incident_id",
             "correlation_count",
             "triggered_at",
@@ -109,6 +114,7 @@ class AlertExporter:
                         "detection_surface": event.detection_surface,
                         "conversation_id": event.conversation_id,
                         "tenant_id": event.tenant_id,
+                        "application_id": event.application_id,
                         "incident_id": event.incident_id,
                         "correlation_count": event.correlation_count,
                         "triggered_at": event.triggered_at.isoformat(),
@@ -135,6 +141,7 @@ def _event_to_dict(event: AlertEvent) -> dict:
         "triggered_at": event.triggered_at.isoformat(),
         "conversation_id": event.conversation_id,
         "tenant_id": event.tenant_id,
+        "application_id": event.application_id,
         "output_snippet": event.output_snippet,
         "full_output": event.full_output,
         "session_metadata": event.session_metadata,

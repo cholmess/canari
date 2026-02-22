@@ -24,12 +24,12 @@ class OutputScanner:
         self.analyzer = ExfiltrationAnalyzer()
         self._rebuild_index()
 
-    def _rebuild_index(self) -> None:
+    def _rebuild_index(self, active_tokens: list[CanaryToken] | None = None) -> None:
         self._token_index.clear()
         self._automaton = None
         if ahocorasick is not None:
             self._automaton = ahocorasick.Automaton()
-        active_tokens = self.registry.list_active()
+        active_tokens = active_tokens if active_tokens is not None else self.registry.list_active()
         for token in active_tokens:
             self._token_index[token.value] = token
             if self._automaton is not None:
@@ -49,10 +49,12 @@ class OutputScanner:
 
     def scan(self, output: str, context: dict | None = None) -> list[AlertEvent]:
         context = context or {}
-        active_tokens = self.registry.list_active()
+        tenant_id = (context.get("session_metadata", {}) or {}).get("tenant_id") or context.get("tenant_id")
+        application_id = (context.get("session_metadata", {}) or {}).get("application_id") or context.get("application_id")
+        active_tokens = self.registry.list_active(tenant_id=tenant_id, application_id=application_id)
         sig = self._signature(active_tokens)
         if sig != self._registry_signature:
-            self._rebuild_index()
+            self._rebuild_index(active_tokens)
 
         hits: list[CanaryToken] = []
         seen = set()
@@ -100,7 +102,9 @@ class OutputScanner:
                         f"Assessment={assessment.reason}. Injection-to-trigger interval={interval}."
                     ),
                     detection_surface="output",
-                    tenant_id=(context.get("session_metadata", {}) or {}).get("tenant_id"),
+                    tenant_id=(context.get("session_metadata", {}) or {}).get("tenant_id") or context.get("tenant_id"),
+                    application_id=(context.get("session_metadata", {}) or {}).get("application_id")
+                    or context.get("application_id"),
                 )
             )
         return events

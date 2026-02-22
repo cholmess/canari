@@ -31,6 +31,10 @@ def test_fastapi_health_and_protected_endpoints(tmp_path):
     assert r.status_code == 200
     assert len(r.json()) == 1
 
+    r = client.get("/v1/alert-stats", headers={"X-API-Key": "secret"})
+    assert r.status_code == 200
+    assert r.json()["total_alerts"] >= 1
+
     r = client.get("/v1/threat-feed", headers={"X-API-Key": "secret"})
     assert r.status_code == 200
     assert r.json()["events_analyzed"] >= 1

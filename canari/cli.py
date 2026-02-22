@@ -16,7 +16,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("token-stats", help="Show token registry stats")
-    sub.add_parser("alert-stats", help="Show alert stats")
+    p_alert_stats = sub.add_parser("alert-stats", help="Show alert stats")
+    p_alert_stats.add_argument("--tenant", default=None)
+    p_alert_stats.add_argument("--app", default=None)
     sub.add_parser("alerter-health", help="Show alert dispatcher channel health counters")
     p_audit = sub.add_parser("audit-log", help="Show administrative audit log")
     p_audit.add_argument("--limit", type=int, default=50)
@@ -28,6 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_keys_add.add_argument("--key", required=True)
     p_keys_add.add_argument("--role", default="reader")
     p_keys_add.add_argument("--tenant", default=None)
+    p_keys_add.add_argument("--app", default=None)
     p_keys_sub.add_parser("list")
     p_keys_revoke = p_keys_sub.add_parser("revoke")
     p_keys_revoke.add_argument("--id", type=int, required=True)
@@ -43,13 +46,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_policy_set.add_argument("--rate-window", type=int, default=None)
     p_policy_set.add_argument("--rate-max", type=int, default=None)
     p_policy_set.add_argument("--retention-days", type=int, default=None)
-    sub.add_parser("apply-retention", help="Apply persisted retention policy now")
+    p_apply_ret = sub.add_parser("apply-retention", help="Apply persisted retention policy now")
+    p_apply_ret.add_argument("--tenant", default=None)
+    p_apply_ret.add_argument("--app", default=None)
     p_seed = sub.add_parser("seed", help="Generate and store canary tokens")
     p_seed.add_argument("--n", type=int, default=1)
     p_seed.add_argument("--types", default="api_key")
+    p_seed.add_argument("--tenant", default=None)
+    p_seed.add_argument("--app", default=None)
     p_rotate = sub.add_parser("rotate-canaries", help="Deactivate active canaries and generate a new set")
     p_rotate.add_argument("--n", type=int, default=3)
     p_rotate.add_argument("--types", default="api_key")
+    p_rotate.add_argument("--tenant", default=None)
+    p_rotate.add_argument("--app", default=None)
 
     p_alerts = sub.add_parser("alerts", help="List recent alerts")
     p_alerts.add_argument("--limit", type=int, default=20)
@@ -59,6 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_alerts.add_argument("--conversation", default=None)
     p_alerts.add_argument("--incident", default=None)
     p_alerts.add_argument("--tenant", default=None)
+    p_alerts.add_argument("--app", default=None)
     p_alerts.add_argument("--since", default=None, help="ISO8601 lower bound for triggered_at")
     p_alerts.add_argument("--until", default=None, help="ISO8601 upper bound for triggered_at")
 
@@ -98,6 +108,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_matches = sub.add_parser("threat-matches", help="Show local vs network signature matches")
     p_matches.add_argument("--local-limit", type=int, default=5000)
     p_matches.add_argument("--network-limit", type=int, default=5000)
+    p_transparency = sub.add_parser("threat-transparency", help="Show threat-sharing transparency report")
+    p_transparency.add_argument("--local-limit", type=int, default=5000)
+    p_transparency.add_argument("--network-limit", type=int, default=5000)
+    p_transparency.add_argument("--out", default=None)
+    p_patterns = sub.add_parser("attack-patterns", help="Show anonymized local attack pattern library")
+    p_patterns.add_argument("--local-limit", type=int, default=5000)
+    p_patterns.add_argument("--out", default=None)
 
     p_export = sub.add_parser("export", help="Export alerts to JSONL or CSV")
     p_export.add_argument("--format", choices=["jsonl", "csv"], required=True)
@@ -108,12 +125,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_export.add_argument("--conversation", default=None)
     p_export.add_argument("--incident", default=None)
     p_export.add_argument("--tenant", default=None)
+    p_export.add_argument("--app", default=None)
     p_export.add_argument("--since", default=None, help="ISO8601 lower bound for triggered_at")
     p_export.add_argument("--until", default=None, help="ISO8601 upper bound for triggered_at")
     p_export.add_argument("--redact", action="store_true", help="Redact canary values in exported output")
 
     p_purge = sub.add_parser("purge-alerts", help="Delete old alert events from local journal")
     p_purge.add_argument("--older-than-days", type=int, required=True)
+    p_purge.add_argument("--tenant", default=None)
+    p_purge.add_argument("--app", default=None)
     p_backup = sub.add_parser("backup-db", help="Backup local Canari SQLite DB")
     p_backup.add_argument("--out", required=True)
     p_scan = sub.add_parser("scan-text", help="Scan arbitrary text for canary leaks")
@@ -122,7 +142,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_siem = sub.add_parser("siem-export", help="Export normalized SIEM events as JSON or JSONL")
     p_siem.add_argument("--limit", type=int, default=1000)
     p_siem.add_argument("--tenant", default=None)
+    p_siem.add_argument("--app", default=None)
     p_siem.add_argument("--out", default=None, help="Optional output path (.jsonl)")
+    p_siem.add_argument("--format", choices=["json", "jsonl", "cef"], default="json")
 
     return parser
 
@@ -141,7 +163,7 @@ def main(argv: list[str] | None = None) -> int:
         print(encoder(honey.registry_stats()))
         return 0
     if args.cmd == "alert-stats":
-        print(encoder(honey.alert_stats()))
+        print(encoder(honey.alert_stats(tenant_id=args.tenant, application_id=args.app)))
         return 0
     if args.cmd == "alerter-health":
         print(encoder(honey.alerter_health()))
@@ -158,6 +180,7 @@ def main(argv: list[str] | None = None) -> int:
                         key=args.key,
                         role=args.role,
                         tenant_id=args.tenant,
+                        application_id=args.app,
                     )
                 )
             )
@@ -189,16 +212,26 @@ def main(argv: list[str] | None = None) -> int:
             print(encoder({"saved": True, "policy": honey.policy()}))
             return 0
     if args.cmd == "apply-retention":
-        print(encoder(honey.apply_retention_policy()))
+        print(encoder(honey.apply_retention_policy(tenant_id=args.tenant, application_id=args.app)))
         return 0
     if args.cmd == "seed":
         token_types = [t.strip() for t in args.types.split(",") if t.strip()]
-        tokens = honey.generate(n_tokens=args.n, token_types=token_types)
+        tokens = honey.generate(
+            n_tokens=args.n,
+            token_types=token_types,
+            tenant_id=args.tenant,
+            application_id=args.app,
+        )
         print(encoder([t.model_dump(mode="json") for t in tokens]))
         return 0
     if args.cmd == "rotate-canaries":
         token_types = [t.strip() for t in args.types.split(",") if t.strip()]
-        report = honey.rotate_canaries(n_tokens=args.n, token_types=token_types)
+        report = honey.rotate_canaries(
+            n_tokens=args.n,
+            token_types=token_types,
+            tenant_id=args.tenant,
+            application_id=args.app,
+        )
         print(encoder(report))
         return 0
     if args.cmd == "alerts":
@@ -212,6 +245,7 @@ def main(argv: list[str] | None = None) -> int:
             since=args.since,
             until=args.until,
             tenant_id=args.tenant,
+            application_id=args.app,
         )
         print(encoder([a.model_dump(mode="json") for a in alerts]))
         return 0
@@ -303,6 +337,29 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 0
+    if args.cmd == "threat-transparency":
+        payload = honey.threat_transparency_report(
+            local_limit=args.local_limit,
+            network_limit=args.network_limit,
+        )
+        if args.out:
+            out = Path(args.out)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+            print(encoder({"written": True, "path": args.out}))
+            return 0
+        print(encoder(payload))
+        return 0
+    if args.cmd == "attack-patterns":
+        payload = honey.attack_pattern_library(local_limit=args.local_limit)
+        if args.out:
+            out = Path(args.out)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+            print(encoder({"written": True, "path": args.out}))
+            return 0
+        print(encoder(payload))
+        return 0
     if args.cmd == "export":
         if args.format == "jsonl":
             n = honey.export_alerts_jsonl(
@@ -316,6 +373,7 @@ def main(argv: list[str] | None = None) -> int:
                 until=args.until,
                 redact=args.redact,
                 tenant_id=args.tenant,
+                application_id=args.app,
             )
         else:
             n = honey.export_alerts_csv(
@@ -329,12 +387,26 @@ def main(argv: list[str] | None = None) -> int:
                 until=args.until,
                 redact=args.redact,
                 tenant_id=args.tenant,
+                application_id=args.app,
             )
         print(encoder({"exported": n, "path": args.out, "format": args.format}))
         return 0
     if args.cmd == "purge-alerts":
-        removed = honey.purge_alerts_older_than(days=args.older_than_days)
-        print(encoder({"removed": removed, "older_than_days": args.older_than_days}))
+        removed = honey.purge_alerts_older_than(
+            days=args.older_than_days,
+            tenant_id=args.tenant,
+            application_id=args.app,
+        )
+        print(
+            encoder(
+                {
+                    "removed": removed,
+                    "older_than_days": args.older_than_days,
+                    "tenant_id": args.tenant,
+                    "application_id": args.app,
+                }
+            )
+        )
         return 0
     if args.cmd == "backup-db":
         size = honey.backup_db(args.out)
@@ -348,16 +420,28 @@ def main(argv: list[str] | None = None) -> int:
         print(encoder([e.model_dump(mode="json") for e in events]))
         return 0
     if args.cmd == "siem-export":
-        rows = honey.siem_events(limit=args.limit, tenant_id=args.tenant)
+        if args.format == "cef":
+            rows = honey.siem_cef_events(limit=args.limit, tenant_id=args.tenant, application_id=args.app)
+        else:
+            rows = honey.siem_events(limit=args.limit, tenant_id=args.tenant, application_id=args.app)
         if args.out:
             out = Path(args.out)
             out.parent.mkdir(parents=True, exist_ok=True)
             with out.open("w", encoding="utf-8") as f:
-                for row in rows:
-                    f.write(json.dumps(row, default=str) + "\n")
-            print(encoder({"exported": len(rows), "path": args.out, "format": "jsonl"}))
+                if args.format == "json":
+                    f.write(json.dumps(rows, indent=2, default=str))
+                elif args.format == "jsonl":
+                    for row in rows:
+                        f.write(json.dumps(row, default=str) + "\n")
+                else:
+                    for row in rows:
+                        f.write(str(row) + "\n")
+            print(encoder({"exported": len(rows), "path": args.out, "format": args.format}))
             return 0
-        print(encoder(rows))
+        if args.format == "cef":
+            print("\n".join(rows))
+        else:
+            print(encoder(rows))
         return 0
 
     print("unknown command", file=sys.stderr)

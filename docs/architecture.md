@@ -19,11 +19,14 @@
 - `canari.threat_intel`: anonymized local threat-signature feed generation.
 - Threat-sharing controls: opt-in toggle, bundle import, network signature catalog, local/network match analysis.
 - enterprise support: tenant-aware alert storage and filtering (`tenant_id`).
+- multi-app support: application-aware alert attribution/filtering (`application_id`).
+- scoped token support: canary tokens can be assigned to tenant/application boundaries.
 - dashboard hardening: optional API token gate for `/api/*` endpoints.
 - tenant operations: default tenant context for automatic attribution in scans/egress monitors.
 - auditability: local immutable-style admin action log (`audit_events`).
 - `canari.api`: FastAPI backend for production-style API serving.
 - API security: static key or persisted API-key auth from local registry.
 - RBAC: `reader` vs `admin` roles, with tenant-scoped readers in API layer.
+- API key scopes: optional `tenant_id` and `application_id` constraints are enforced at query layer.
 - key ops: persisted key rotation and usage tracking (`last_used_at`).
 - API operations: admin-only endpoints for key lifecycle management.

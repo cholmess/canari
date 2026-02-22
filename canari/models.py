@@ -44,6 +44,8 @@ class CanaryToken(BaseModel):
     injection_timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: dict[str, Any] = Field(default_factory=dict)
     active: bool = True
+    tenant_id: str | None = None
+    application_id: str | None = None
 
 
 class AlertEvent(BaseModel):
@@ -65,3 +67,4 @@ class AlertEvent(BaseModel):
     incident_id: str | None = None
     correlation_count: int = 1
     tenant_id: str | None = None
+    application_id: str | None = None

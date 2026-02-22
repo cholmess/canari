@@ -49,10 +49,15 @@ class ForensicReporter:
             ],
         }
 
-    def forensic_summary(self, limit: int = 5000, tenant_id: str | None = None) -> dict:
-        alerts = self.registry.list_alerts(limit=limit, tenant_id=tenant_id)
+    def forensic_summary(
+        self,
+        limit: int = 5000,
+        tenant_id: str | None = None,
+        application_id: str | None = None,
+    ) -> dict:
+        alerts = self.registry.list_alerts(limit=limit, tenant_id=tenant_id, application_id=application_id)
         token_stats = self.registry.stats() if tenant_id is None else {"tenant_scoped": True}
-        alert_stats = self.registry.alert_stats(tenant_id=tenant_id)
+        alert_stats = self.registry.alert_stats(tenant_id=tenant_id, application_id=application_id)
 
         if not alerts:
             return {
@@ -79,8 +84,13 @@ class ForensicReporter:
             "top_incidents": top_incidents,
         }
 
-    def siem_events(self, limit: int = 1000, tenant_id: str | None = None) -> list[dict]:
-        alerts = self.registry.list_alerts(limit=limit, tenant_id=tenant_id)
+    def siem_events(
+        self,
+        limit: int = 1000,
+        tenant_id: str | None = None,
+        application_id: str | None = None,
+    ) -> list[dict]:
+        alerts = self.registry.list_alerts(limit=limit, tenant_id=tenant_id, application_id=application_id)
         out = []
         for a in alerts:
             out.append(
@@ -93,11 +103,40 @@ class ForensicReporter:
                     "incident_id": a.incident_id,
                     "conversation_id": a.conversation_id,
                     "tenant_id": a.tenant_id,
+                    "application_id": a.application_id,
                     "canary_id": a.canary_id,
                     "token_type": a.token_type.value,
                     "snippet": a.output_snippet,
                     "correlation_count": a.correlation_count,
                 }
+            )
+        return out
+
+    def siem_cef_events(
+        self,
+        limit: int = 1000,
+        tenant_id: str | None = None,
+        application_id: str | None = None,
+    ) -> list[str]:
+        rows = self.siem_events(limit=limit, tenant_id=tenant_id, application_id=application_id)
+        out: list[str] = []
+        for row in rows:
+            # CEF:Version|Device Vendor|Device Product|Device Version|Signature ID|Name|Severity|Extension
+            sev = {"low": 2, "medium": 5, "high": 8, "critical": 10}.get(row.get("severity", "low"), 1)
+            sig_id = row.get("token_type", "unknown")
+            name = "canary_leak_detected"
+            ext_parts = [
+                f"rt={row.get('ts', '')}",
+                f"cs1Label=incident_id cs1={row.get('incident_id', '') or ''}",
+                f"cs2Label=conversation_id cs2={row.get('conversation_id', '') or ''}",
+                f"cs3Label=tenant_id cs3={row.get('tenant_id', '') or ''}",
+                f"cs4Label=application_id cs4={row.get('application_id', '') or ''}",
+                f"cs5Label=detection_surface cs5={row.get('detection_surface', '') or ''}",
+                f"cn1Label=correlation_count cn1={row.get('correlation_count', 1)}",
+            ]
+            out.append(
+                "CEF:0|Canari|IDS|0.1.0|"
+                f"{sig_id}|{name}|{sev}|{' '.join(ext_parts)}"
             )
         return out
 

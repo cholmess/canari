@@ -33,14 +33,19 @@
 - [x] Opt-in threat intelligence sharing toggle (persisted)
 - [x] Network signature database (imported shared signatures)
 - [x] Automated network-match alert fanout for opted-in deployments
+- [x] Threat-sharing transparency report and local attack-pattern library
 
 ## Phase 5 — Enterprise Controls (Foundational)
 - [x] Tenant-aware alert attribution/filtering (`tenant_id`)
+- [x] Multi-application alert attribution/filtering (`application_id`)
+- [x] Scoped token generation and scoped matching (tenant/application aware tokens)
 - [x] Redacted exports for compliance
+- [x] Scoped retention application (tenant/application-aware purge)
 - [x] Webhook payload signing + verification
 - [x] Persisted policy controls and audit log
 - [x] Dashboard API token gate
 - [x] SIEM-style normalized event API/export (`/v1/siem/events`, `siem-export`)
+- [x] SIEM CEF export path (`/v1/siem/cef`, `siem-export --format cef`)
 
 ## Current Test Status
 - `pytest`: passing (with one sandbox-related dashboard socket test skip)

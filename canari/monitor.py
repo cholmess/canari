@@ -39,7 +39,9 @@ class EgressMonitor:
         )
 
         hits: list[CanaryToken] = []
-        for token in self.registry.list_active():
+        tenant_id = (context.get("session_metadata", {}) or {}).get("tenant_id") or context.get("tenant_id")
+        application_id = (context.get("session_metadata", {}) or {}).get("application_id") or context.get("application_id")
+        for token in self.registry.list_active(tenant_id=tenant_id, application_id=application_id):
             if token.value in surface:
                 hits.append(token)
 
@@ -76,7 +78,9 @@ class EgressMonitor:
                         f"Assessment={assessment.reason}. Injection-to-trigger interval={interval}."
                     ),
                     detection_surface="network_egress",
-                    tenant_id=(context.get("session_metadata", {}) or {}).get("tenant_id"),
+                    tenant_id=(context.get("session_metadata", {}) or {}).get("tenant_id") or context.get("tenant_id"),
+                    application_id=(context.get("session_metadata", {}) or {}).get("application_id")
+                    or context.get("application_id"),
                 )
             )
         return events

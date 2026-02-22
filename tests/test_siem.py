@@ -23,11 +23,18 @@ def test_siem_events_client_and_cli(tmp_path, capsys):
     assert len(rows) == 1
     assert rows[0]["event_type"] == "canary_leak"
 
-    rc = main(["--db", str(db), "siem-export", "--limit", "10", "--out", str(out)])
+    rc = main(["--db", str(db), "siem-export", "--limit", "10", "--format", "jsonl", "--out", str(out)])
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["exported"] == 1
     assert out.exists()
+
+    out_cef = tmp_path / "siem.cef"
+    rc = main(["--db", str(db), "siem-export", "--limit", "10", "--format", "cef", "--out", str(out_cef)])
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["format"] == "cef"
+    assert "CEF:0|Canari|IDS|" in out_cef.read_text(encoding="utf-8")
 
 
 def test_siem_events_fastapi(tmp_path):
@@ -45,3 +52,9 @@ def test_siem_events_fastapi(tmp_path):
     body = r.json()
     assert len(body) == 1
     assert body[0]["event_type"] == "canary_leak"
+
+    r = client.get("/v1/siem/cef?limit=10", headers={"X-API-Key": "admin-key"})
+    assert r.status_code == 200
+    cef = r.json()
+    assert len(cef) == 1
+    assert cef[0].startswith("CEF:0|Canari|IDS|")

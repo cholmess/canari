@@ -36,3 +36,22 @@ def test_purge_alerts_older_than(tmp_path):
     alerts = reg.list_alerts(limit=10)
     ids = {a.id for a in alerts}
     assert ids == {"a-new"}
+
+
+def test_purge_alerts_older_than_scoped_by_app(tmp_path):
+    reg = CanaryRegistry(str(tmp_path / "canari.db"))
+    now = datetime.now(timezone.utc)
+    old_app_a = _mk_event("a-old-a", now - timedelta(days=10))
+    old_app_a.application_id = "app-a"
+    old_app_b = _mk_event("a-old-b", now - timedelta(days=10))
+    old_app_b.application_id = "app-b"
+
+    reg.record_alert(old_app_a)
+    reg.record_alert(old_app_b)
+
+    removed = reg.purge_alerts_older_than(days=7, application_id="app-a")
+    assert removed == 1
+
+    alerts = reg.list_alerts(limit=10)
+    ids = {a.id for a in alerts}
+    assert ids == {"a-old-b"}
