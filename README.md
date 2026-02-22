@@ -39,6 +39,7 @@ print(alerts)
 - Export helpers (`export_alerts_jsonl`, `export_alerts_csv`)
 - Built-in CLI (`canari` or `python -m canari`)
 - Alert journal retention (`purge_alerts_older_than`)
+- Optional alert dispatch rate limiting (`set_alert_rate_limit`)
 
 ## Integration patterns
 
@@ -154,6 +155,14 @@ Alert journal:
 alerts = honey.alert_history(limit=25, severity="critical")
 stats = honey.alert_stats()
 print(len(alerts), stats["total_alerts"])
+```
+
+Rate limit dispatch noise:
+
+```python
+honey.set_alert_rate_limit(window_seconds=60, max_dispatches=3)
+# ...
+honey.disable_alert_rate_limit()
 ```
 
 Forensic reports:

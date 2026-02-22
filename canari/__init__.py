@@ -8,6 +8,7 @@ from canari.integrations import inject_canaries_into_index, wrap_chain, wrap_que
 from canari.injector import inject_as_document, inject_into_system_prompt, wrap_context_assembler
 from canari.monitor import EgressMonitor
 from canari.models import AlertEvent, CanaryToken, InjectionStrategy, TokenType
+from canari.rate_limit import AlertRateLimiter
 from canari.exporter import AlertExporter
 from canari.reporting import ForensicReporter
 from canari.registry import CanaryRegistry
@@ -25,6 +26,7 @@ class CanariClient:
         self.incidents = IncidentManager()
         self.reporter = ForensicReporter(self.registry)
         self.exporter = AlertExporter(self.registry)
+        self.rate_limiter: AlertRateLimiter | None = None
         self.alerter = AlertDispatcher(canari_version=__version__)
         self.alerter.add_stdout()
 
@@ -94,7 +96,8 @@ class CanariClient:
             correlated = self.incidents.correlate(event)
             correlated_events.append(correlated)
             self.registry.record_alert(correlated)
-            self.alerter.dispatch(correlated)
+            if self.rate_limiter is None or self.rate_limiter.should_dispatch(correlated):
+                self.alerter.dispatch(correlated)
         return correlated_events
 
     def monitor_http_request(
@@ -118,7 +121,8 @@ class CanariClient:
             correlated = self.incidents.correlate(event)
             correlated_events.append(correlated)
             self.registry.record_alert(correlated)
-            self.alerter.dispatch(correlated)
+            if self.rate_limiter is None or self.rate_limiter.should_dispatch(correlated):
+                self.alerter.dispatch(correlated)
         return correlated_events
 
     def wrap_httpx_client(self, client):
@@ -175,6 +179,12 @@ class CanariClient:
 
     def doctor(self) -> dict:
         return self.registry.doctor()
+
+    def set_alert_rate_limit(self, *, window_seconds: int = 60, max_dispatches: int = 3) -> None:
+        self.rate_limiter = AlertRateLimiter(window_seconds=window_seconds, max_dispatches=max_dispatches)
+
+    def disable_alert_rate_limit(self) -> None:
+        self.rate_limiter = None
 
     def forensic_summary(self, limit: int = 5000) -> dict:
         return self.reporter.forensic_summary(limit=limit)
@@ -268,6 +278,7 @@ __all__ = [
     "EgressMonitor",
     "ForensicReporter",
     "AlertExporter",
+    "AlertRateLimiter",
     "wrap_runnable",
     "wrap_chain",
     "wrap_query_engine",

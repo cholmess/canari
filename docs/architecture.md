@@ -14,3 +14,4 @@
 - `canari.cli`: operational CLI for stats, incident reports, and exports.
 - retention policy: local alert journal can be purged by age.
 - operational backup: SQLite DB backup for incident response and archival.
+- `canari.rate_limit`: optional in-memory dispatch throttling for alert-noise control.
