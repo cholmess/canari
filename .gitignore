@@ -9,3 +9,6 @@ dist/
 CANARI_FIX_PLAN.md
 examples/attack_demo/.env
 .pypirc
+examples/attack_demo/.venv/
+examples/attack_demo/canari_attack_demo.db
+canari_attack_demo.db

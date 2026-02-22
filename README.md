@@ -1,36 +1,26 @@
 # Canari
 
+Local LLM leak detection using canary tokens.
+
 [![PyPI version](https://badge.fury.io/py/canari-llm.svg)](https://pypi.org/project/canari-llm/)
 [![CI](https://github.com/cholmess/canari/actions/workflows/ci.yml/badge.svg)](https://github.com/cholmess/canari/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-Honeypot tokens for LLM and RAG applications.
+LLM applications sometimes return internal values by mistake. Traditional monitoring rarely catches this because the response is technically valid application output. Canari injects decoy canary tokens into prompts or context and alerts when those tokens appear in model output.
 
-Prompt injection is the #1 vulnerability in LLM applications (OWASP LLM Top 10).
-An attacker can exfiltrate your entire RAG context through a chat interface and
-your firewall will never flag a single packet, because the exfiltration looks
-exactly like a legitimate API response. You find out weeks later, if ever.
+## What Problem Does This Solve?
 
-Canari injects synthetic decoy tokens into your LLM context. When an attacker
-successfully extracts them, you know immediately with zero false positives,
-because the token exists nowhere legitimate.
+You keep sensitive values in prompts, RAG context, or internal documents. You need a deterministic way to know when those values leak into output. Canary tokens are tripwires: if one appears in output, the model leaked internal context.
 
-Canary tokens have protected traditional infrastructure for years. Canari brings
-the same principle to LLM applications: put something fake in the place attackers
-target, instrument it, and alert on contact. If it fires, it's a breach.
+Examples:
+
+- API key leak: a support assistant returns `sk_test_...` from internal config text.
+- RAG identifier leak: retrieval returns an internal document ID that should never leave the system boundary.
+- Prompt injection leak: attacker asks for hidden context and the model prints seeded internal tokens.
 
 ## Demo
 
 ![Canari attack demo](https://raw.githubusercontent.com/cholmess/canari/main/docs/assets/attack-demo.gif)
-
-Expected output center-frame:
-
-```text
-CANARI ALERT - CANARY FIRED
-Severity: HIGH
-Token type: stripe_key
-This is a confirmed prompt injection attack.
-```
 
 ## Install
 
@@ -38,86 +28,86 @@ This is a confirmed prompt injection attack.
 pip install canari-llm
 ```
 
-## 60-second quickstart
+## Minimal 3-Step Quickstart
+
+### Step 1: Generate a canary token
+
+### Step 2: Inject it into prompt/context
+
+### Step 3: Scan output and trigger alert
 
 ```python
 import canari
 
-honey = canari.init(alert_webhook="https://example.com/canari")
-canaries = honey.generate(n_tokens=3, token_types=["api_key", "email", "credit_card"])
+honey = canari.init(db_path="canari.db")
+honey.alerter._channels = []
 
-system_prompt = honey.inject_system_prompt(
-    "You are a helpful assistant.",
-    canaries=canaries,
-)
+# Step 1
+canary = honey.generate(n_tokens=1, token_types=["api_key"])[0]
 
-response = "Internal key: sk_test_CANARI_abcd1234"
-alerts = honey.scan_output(response, context={"conversation_id": "conv-1"})
-print(len(alerts))
+# Step 2 (simulate context containing the canary)
+context = f"Internal config: billing_key={canary.value}"
+
+# Step 3 (simulate model output leak)
+model_output = f"Here is the value you asked for: {canary.value}"
+alerts = honey.scan_output(model_output, context={"conversation_id": "quickstart-1"})
+
+print(f"alerts: {len(alerts)}")
+if alerts:
+    print(f"ALERT: leak detected for {alerts[0].token_type.value} -> {alerts[0].canary_value}")
 ```
 
-## Run the attack demo
+## Example Flow
+
+1. Generate canary: `canari_abc123` (example marker)
+2. Model output accidentally contains it.
+3. Canari detects the exact token match.
+4. Alert is triggered immediately.
+
+Expected console output:
+
+```text
+alerts: 1
+ALERT: leak detected for api_key -> api_canari_xxxxxxxx
+```
+
+## CLI-Based Local Flow
 
 ```bash
-cd examples/attack_demo
-pip install -r requirements.txt
-python app.py --offline
-```
-
-## How it works
-
-Canari generates deterministic fake secrets that look real enough to be attractive targets for prompt injection attacks. You insert those decoys into system prompts, hidden context appendices, or document-style RAG content while keeping a local registry of what was planted and where.
-
-When a model response is produced, Canari scans output with exact token matching and deterministic fallback paths. Any hit is definitive because each canary was synthetically created by your deployment and does not belong in legitimate output.
-
-Every hit becomes a structured alert event with severity, context, and timeline attributes. You can dispatch immediately to stdout, webhooks, and Slack, then query incidents and forensic summaries from local SQLite without shipping your data to an external service.
-
-## Integration patterns
-
-```python
-safe_create = honey.wrap_llm_call(client.chat.completions.create)
-resp = safe_create(model="gpt-4o-mini", messages=[...])
-```
-
-```python
-honey.patch_openai_client(client)
-resp = client.chat.completions.create(model="gpt-4o-mini", messages=[...])
-```
-
-```python
-safe_chain = honey.wrap_chain(chain)
-safe_runnable = honey.wrap_runnable(runnable)
-safe_qe = honey.wrap_query_engine(query_engine)
-```
-
-## Alert channels
-
-- Webhook: signed payloads with `X-Canari-Signature` support.
-- Slack: push concise incident notifications.
-- Stdout/file/callback: local ops-friendly alert sinks.
-
-More details: `docs/alert-channels.md`.
-
-## CLI (Top 10)
-
-```bash
-canari --db canari.db seed --n 5 --types api_key,email,credit_card
-canari --db canari.db token-stats
+canari --db canari.db seed --n 3 --types api_key,email,credit_card
+canari --db canari.db scan-text --text "leak api_canari_abcd1234"
 canari --db canari.db alerts --limit 20
-canari --db canari.db alerts --severity critical
-canari --db canari.db incidents --limit 20
-canari --db canari.db incident-report inc-conv-123-456
-canari --db canari.db scan-text --text "leak sk_test_CANARI_x"
-canari --db canari.db forensic-summary
-canari --db canari.db rotate-canaries --n 5
-canari --db canari.db serve-dashboard --host 127.0.0.1 --port 8080
 ```
 
-## Advanced features
+## What Canari Is
 
-- Full CLI: `docs/cli-reference.md`
-- Enterprise controls: `docs/enterprise.md`
-- Threat intel: `docs/threat-intelligence.md`
-- Integration deep dive: `docs/integration-guide.md`
-- Token generation details: `docs/token-types.md`
-- Show HN launch draft: `docs/show-hn.md`
+- Local canary token leak detector.
+- Deterministic scanner using exact token matching.
+- Works without calling an LLM.
+
+## What Canari Is Not
+
+- A full security platform.
+- A model evaluation engine.
+- A governance SaaS.
+- An AI-based content classifier.
+
+## Planned / Future Extensions
+
+These exist in the codebase or roadmap, but they are not the core narrative:
+
+- Dashboard and server mode APIs.
+- Advanced integrations (OpenAI client patching, chain/runnable wrappers).
+- SIEM/compliance/export workflows.
+- Threat-intel sharing and related reporting.
+
+Core use case remains local CLI leak detection with deterministic token scanning.
+
+## Maintainer
+
+Maintained by Christopher Holmes Silva.
+
+- X: https://x.com/cholmess
+- LinkedIn: https://linkedin.com/in/christopher-holmes-silva
+
+Feedback is welcome from developers shipping LLM applications.
