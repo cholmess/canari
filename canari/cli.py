@@ -16,6 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("token-stats", help="Show token registry stats")
     sub.add_parser("alert-stats", help="Show alert stats")
+    sub.add_parser("doctor", help="Run local DB/schema diagnostics")
     p_seed = sub.add_parser("seed", help="Generate and store canary tokens")
     p_seed.add_argument("--n", type=int, default=1)
     p_seed.add_argument("--types", default="api_key")
@@ -70,6 +71,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd == "alert-stats":
         print(encoder(honey.alert_stats()))
+        return 0
+    if args.cmd == "doctor":
+        print(encoder(honey.doctor()))
         return 0
     if args.cmd == "seed":
         token_types = [t.strip() for t in args.types.split(",") if t.strip()]

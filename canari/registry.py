@@ -240,6 +240,29 @@ class CanaryRegistry:
                 src_conn.backup(dest_conn)
         return dest.stat().st_size
 
+    def doctor(self) -> dict:
+        checks = {
+            "tables": {"canary_tokens": False, "alert_events": False},
+            "writable": False,
+        }
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+            names = {row["name"] for row in rows}
+            checks["tables"]["canary_tokens"] = "canary_tokens" in names
+            checks["tables"]["alert_events"] = "alert_events" in names
+
+            try:
+                conn.execute("CREATE TABLE IF NOT EXISTS __canari_doctor_tmp (id INTEGER)")
+                conn.execute("DROP TABLE __canari_doctor_tmp")
+                checks["writable"] = True
+            except Exception:
+                checks["writable"] = False
+
+        ok = all(checks["tables"].values()) and checks["writable"]
+        return {"ok": ok, "db_path": self.db_path, "checks": checks}
+
     @staticmethod
     def _row_to_token(row: sqlite3.Row) -> CanaryToken:
         return CanaryToken(

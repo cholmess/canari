@@ -173,6 +173,9 @@ class CanariClient:
     def backup_db(self, path: str) -> int:
         return self.registry.backup_to(path)
 
+    def doctor(self) -> dict:
+        return self.registry.doctor()
+
     def forensic_summary(self, limit: int = 5000) -> dict:
         return self.reporter.forensic_summary(limit=limit)
 
