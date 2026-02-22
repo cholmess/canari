@@ -35,7 +35,7 @@ This is a confirmed prompt injection attack.
 ## Install
 
 ```bash
-pip install canari
+pip install canari-llm
 ```
 
 ## 60-second quickstart

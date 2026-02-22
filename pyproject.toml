@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "canari"
+name = "canari-llm"
 version = "0.1.0"
 description = "Canary-token IDS primitives for LLM applications"
 readme = "README.md"
