@@ -8,6 +8,7 @@ from canari.integrations import inject_canaries_into_index, wrap_chain, wrap_que
 from canari.injector import inject_as_document, inject_into_system_prompt, wrap_context_assembler
 from canari.monitor import EgressMonitor
 from canari.models import AlertEvent, CanaryToken, InjectionStrategy, TokenType
+from canari.exporter import AlertExporter
 from canari.reporting import ForensicReporter
 from canari.registry import CanaryRegistry
 from canari.scanner import OutputScanner
@@ -23,6 +24,7 @@ class CanariClient:
         self.egress_monitor = EgressMonitor(self.registry)
         self.incidents = IncidentManager()
         self.reporter = ForensicReporter(self.registry)
+        self.exporter = AlertExporter(self.registry)
         self.alerter = AlertDispatcher(canari_version=__version__)
         self.alerter.add_stdout()
 
@@ -162,6 +164,44 @@ class CanariClient:
     def incident_report(self, incident_id: str) -> dict:
         return self.reporter.incident_report(incident_id)
 
+    def export_alerts_jsonl(
+        self,
+        path: str,
+        *,
+        limit: int = 1000,
+        severity: str | None = None,
+        detection_surface: str | None = None,
+        conversation_id: str | None = None,
+        incident_id: str | None = None,
+    ) -> int:
+        return self.exporter.export_jsonl(
+            path,
+            limit=limit,
+            severity=severity,
+            detection_surface=detection_surface,
+            conversation_id=conversation_id,
+            incident_id=incident_id,
+        )
+
+    def export_alerts_csv(
+        self,
+        path: str,
+        *,
+        limit: int = 1000,
+        severity: str | None = None,
+        detection_surface: str | None = None,
+        conversation_id: str | None = None,
+        incident_id: str | None = None,
+    ) -> int:
+        return self.exporter.export_csv(
+            path,
+            limit=limit,
+            severity=severity,
+            detection_surface=detection_surface,
+            conversation_id=conversation_id,
+            incident_id=incident_id,
+        )
+
     def recent_incidents(self, limit: int = 50):
         return self.incidents.recent_incidents(limit=limit)
 
@@ -209,6 +249,7 @@ __all__ = [
     "TokenType",
     "EgressMonitor",
     "ForensicReporter",
+    "AlertExporter",
     "wrap_runnable",
     "wrap_chain",
     "wrap_query_engine",

@@ -36,6 +36,7 @@ print(alerts)
 - Conversation-level correlation (`incident_id`, `correlation_count`) for repeated/multi-surface attacks
 - Local alert journal in SQLite (`alert_history`, `alert_stats`)
 - Forensic reporting (`forensic_summary`, `incident_report`)
+- Export helpers (`export_alerts_jsonl`, `export_alerts_csv`)
 
 ## Integration patterns
 
@@ -159,6 +160,13 @@ Forensic reports:
 summary = honey.forensic_summary(limit=1000)
 incident = honey.incident_report("inc-conv-123-456")
 print(summary["alerts"]["total_alerts"], incident["found"])
+```
+
+Export alerts:
+
+```python
+honey.export_alerts_jsonl("/tmp/canari-alerts.jsonl", severity="critical")
+honey.export_alerts_csv("/tmp/canari-alerts.csv", detection_surface="network_egress")
 ```
 
 ## CI and release checks
