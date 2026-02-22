@@ -177,7 +177,9 @@ CLI usage:
 python -m canari --db canari.db token-stats
 python -m canari --db canari.db alert-stats
 python -m canari --db canari.db alerts --limit 20 --severity critical
+python -m canari --db canari.db alerts --incident inc-conv-123-456
 python -m canari --db canari.db incidents --limit 20
+python -m canari --db canari.db forensic-summary --limit 5000
 python -m canari --db canari.db export --format jsonl --out /tmp/canari-alerts.jsonl
 python -m canari --db canari.db purge-alerts --older-than-days 30
 ```

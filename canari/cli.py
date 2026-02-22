@@ -20,12 +20,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_alerts.add_argument("--severity", default=None)
     p_alerts.add_argument("--surface", default=None)
     p_alerts.add_argument("--conversation", default=None)
+    p_alerts.add_argument("--incident", default=None)
 
     p_incidents = sub.add_parser("incidents", help="List recent incidents")
     p_incidents.add_argument("--limit", type=int, default=20)
 
     p_report = sub.add_parser("incident-report", help="Show incident timeline report")
     p_report.add_argument("incident_id")
+    p_summary = sub.add_parser("forensic-summary", help="Show global forensic summary")
+    p_summary.add_argument("--limit", type=int, default=5000)
 
     p_export = sub.add_parser("export", help="Export alerts to JSONL or CSV")
     p_export.add_argument("--format", choices=["jsonl", "csv"], required=True)
@@ -60,6 +63,7 @@ def main(argv: list[str] | None = None) -> int:
             severity=args.severity,
             detection_surface=args.surface,
             conversation_id=args.conversation,
+            incident_id=args.incident,
         )
         print(json.dumps([a.model_dump(mode="json") for a in alerts], indent=2, default=str))
         return 0
@@ -69,6 +73,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd == "incident-report":
         print(json.dumps(honey.incident_report(args.incident_id), indent=2, default=str))
+        return 0
+    if args.cmd == "forensic-summary":
+        print(json.dumps(honey.forensic_summary(limit=args.limit), indent=2, default=str))
         return 0
     if args.cmd == "export":
         if args.format == "jsonl":
