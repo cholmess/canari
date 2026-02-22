@@ -14,6 +14,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("token-stats", help="Show token registry stats")
     sub.add_parser("alert-stats", help="Show alert stats")
+    p_seed = sub.add_parser("seed", help="Generate and store canary tokens")
+    p_seed.add_argument("--n", type=int, default=1)
+    p_seed.add_argument("--types", default="api_key")
 
     p_alerts = sub.add_parser("alerts", help="List recent alerts")
     p_alerts.add_argument("--limit", type=int, default=20)
@@ -41,6 +44,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_purge = sub.add_parser("purge-alerts", help="Delete old alert events from local journal")
     p_purge.add_argument("--older-than-days", type=int, required=True)
+    p_scan = sub.add_parser("scan-text", help="Scan arbitrary text for canary leaks")
+    p_scan.add_argument("--text", required=True)
+    p_scan.add_argument("--conversation", default=None)
 
     return parser
 
@@ -56,6 +62,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd == "alert-stats":
         print(json.dumps(honey.alert_stats(), indent=2, default=str))
+        return 0
+    if args.cmd == "seed":
+        token_types = [t.strip() for t in args.types.split(",") if t.strip()]
+        tokens = honey.generate(n_tokens=args.n, token_types=token_types)
+        print(json.dumps([t.model_dump(mode="json") for t in tokens], indent=2, default=str))
         return 0
     if args.cmd == "alerts":
         alerts = honey.alert_history(
@@ -101,6 +112,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "purge-alerts":
         removed = honey.purge_alerts_older_than(days=args.older_than_days)
         print(json.dumps({"removed": removed, "older_than_days": args.older_than_days}))
+        return 0
+    if args.cmd == "scan-text":
+        events = honey.scan_output(
+            args.text,
+            context={"conversation_id": args.conversation} if args.conversation else None,
+        )
+        print(json.dumps([e.model_dump(mode="json") for e in events], indent=2, default=str))
         return 0
 
     parser.error("unknown command")

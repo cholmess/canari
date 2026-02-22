@@ -45,3 +45,31 @@ def test_cli_forensic_summary_and_alert_incident_filter(tmp_path, capsys):
     out = capsys.readouterr().out
     payload = json.loads(out)
     assert len(payload) == 1
+
+
+def test_cli_seed_and_scan_text(tmp_path, capsys):
+    db = tmp_path / "canari.db"
+
+    rc = main(["--db", str(db), "seed", "--n", "2", "--types", "api_key,email"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    tokens = json.loads(out)
+    assert len(tokens) == 2
+
+    leaked = tokens[0]["value"]
+    rc = main(
+        [
+            "--db",
+            str(db),
+            "scan-text",
+            "--text",
+            f"leak {leaked}",
+            "--conversation",
+            "conv-cli-scan",
+        ]
+    )
+    assert rc == 0
+    out = capsys.readouterr().out
+    events = json.loads(out)
+    assert len(events) == 1
+    assert events[0]["conversation_id"] == "conv-cli-scan"
