@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "canari"
+version = "0.1.0"
+description = "Canary-token IDS primitives for LLM applications"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  {name = "Canari"}
+]
+dependencies = [
+  "pydantic>=2.6",
+  "pyahocorasick>=2.0.0",
+  "httpx>=0.27"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-cov>=5.0"
+]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["canari*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
