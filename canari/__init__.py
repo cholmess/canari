@@ -5,6 +5,7 @@ from canari.alerter import AlertDispatcher
 from canari.generator import CanaryGenerator
 from canari.integrations import inject_canaries_into_index, wrap_chain, wrap_query_engine
 from canari.injector import inject_as_document, inject_into_system_prompt, wrap_context_assembler
+from canari.monitor import EgressMonitor
 from canari.models import AlertEvent, CanaryToken, InjectionStrategy, TokenType
 from canari.registry import CanaryRegistry
 from canari.scanner import OutputScanner
@@ -17,6 +18,7 @@ class CanariClient:
         self.registry = CanaryRegistry(db_path=db_path)
         self.generator = CanaryGenerator()
         self.scanner = OutputScanner(self.registry)
+        self.egress_monitor = EgressMonitor(self.registry)
         self.alerter = AlertDispatcher(canari_version=__version__)
         self.alerter.add_stdout()
 
@@ -85,6 +87,40 @@ class CanariClient:
             self.alerter.dispatch(event)
         return events
 
+    def monitor_http_request(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict | None = None,
+        body=None,
+        context: dict | None = None,
+    ) -> list[AlertEvent]:
+        events = self.egress_monitor.inspect_http_request(
+            method,
+            url,
+            headers=headers,
+            body=body,
+            context=context,
+        )
+        for event in events:
+            self.alerter.dispatch(event)
+        return events
+
+    def wrap_httpx_client(self, client):
+        if not hasattr(client, "request"):
+            raise TypeError("client must expose request(method, url, **kwargs)")
+        original_request = client.request
+
+        def wrapped_request(method, url, **kwargs):
+            headers = kwargs.get("headers")
+            body = kwargs.get("json", kwargs.get("data"))
+            self.monitor_http_request(method, url, headers=headers, body=body)
+            return original_request(method, url, **kwargs)
+
+        client.request = wrapped_request
+        return client
+
     def registry_stats(self) -> dict:
         return self.registry.stats()
 
@@ -129,6 +165,7 @@ __all__ = [
     "InjectionStrategy",
     "OutputScanner",
     "TokenType",
+    "EgressMonitor",
     "wrap_runnable",
     "wrap_chain",
     "wrap_query_engine",

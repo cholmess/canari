@@ -32,6 +32,7 @@ class AlertDispatcher:
                 "injection_location": event.injection_location,
             },
             "trigger": {
+                "detection_surface": event.detection_surface,
                 "output_snippet": event.output_snippet,
                 "conversation_id": event.conversation_id,
                 "session_metadata": event.session_metadata,

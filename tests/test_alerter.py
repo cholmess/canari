@@ -27,6 +27,7 @@ def test_build_payload_shape():
     assert payload["canari_version"] == "0.1.0"
     assert payload["canary"]["id"] == "canary-1"
     assert payload["trigger"]["conversation_id"] == "conv-1"
+    assert payload["trigger"]["detection_surface"] == "output"
     assert payload["severity"] == "high"
 
 

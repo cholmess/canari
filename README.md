@@ -30,6 +30,7 @@ print(alerts)
 - Aho-Corasick output scanning for deterministic matching
 - Alert dispatch to webhook, Slack, stdout, file, or callback
 - Integration wrappers for OpenAI-style callables, Runnable `.invoke()/batch()`, chain `.invoke()`, and query-engine `.query()`
+- Outbound HTTP egress monitoring for canary token exfiltration attempts
 - Deterministic exfiltration-pattern assessment (`low`/`medium`/`high`/`critical`)
 - Registry exposure stats (`total/active/by_type/by_strategy`)
 
@@ -65,6 +66,16 @@ safe_qe = honey.wrap_query_engine(query_engine)
 response = safe_qe.query("...")
 ```
 
+```python
+# Outbound HTTP request monitoring
+honey.monitor_http_request(
+    "POST",
+    "https://api.example.com/submit",
+    headers={"Authorization": "Bearer ..."},
+    body={"payload": "..."},
+)
+```
+
 ## Webhook payload shape
 
 Webhook/file JSON alerts follow this structure:
@@ -84,6 +95,7 @@ Webhook/file JSON alerts follow this structure:
     "injection_location": "RAG vector store document"
   },
   "trigger": {
+    "detection_surface": "output",
     "output_snippet": "...",
     "conversation_id": "conv-uuid",
     "session_metadata": {}

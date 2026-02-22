@@ -7,3 +7,4 @@
 - `canari.alerter`: alert dispatch across channels.
 - `canari.adapters`: SDK/runnable adapters (OpenAI client patching, runnable wrapping).
 - `canari.detection`: exfiltration-pattern assessment for severity classification.
+- `canari.monitor`: outbound HTTP egress monitor for canary credential usage.

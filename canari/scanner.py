@@ -86,6 +86,7 @@ class OutputScanner:
                         f"for strategy={token.injection_strategy.value}. "
                         f"Assessment={assessment.reason}. Injection-to-trigger interval={interval}."
                     ),
+                    detection_surface="output",
                 )
             )
         return events
