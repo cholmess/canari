@@ -1,5 +1,9 @@
 # Canari
 
+[![PyPI version](https://badge.fury.io/py/canari-llm.svg)](https://pypi.org/project/canari-llm/)
+[![CI](https://github.com/cholmess/canari/actions/workflows/ci.yml/badge.svg)](https://github.com/cholmess/canari/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 Honeypot tokens for LLM and RAG applications.
 
 Prompt injection is the #1 vulnerability in LLM applications (OWASP LLM Top 10).
@@ -17,7 +21,7 @@ target, instrument it, and alert on contact. If it fires, it's a breach.
 
 ## Demo
 
-![Canari attack demo](docs/assets/attack-demo.gif)
+![Canari attack demo](https://raw.githubusercontent.com/cholmess/canari/main/docs/assets/attack-demo.gif)
 
 Expected output center-frame:
 

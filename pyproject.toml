@@ -4,29 +4,45 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "canari-llm"
-version = "0.1.0"
-description = "Canary-token IDS primitives for LLM applications"
+version = "0.1.1"
+description = "Local-first honeypot token IDS for LLM and RAG applications."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 authors = [
-  {name = "Canari"}
+  {name = "Christopher Holmes", email = "c.holmes.silva@gmail.com"}
 ]
 license = {text = "MIT"}
+keywords = [
+  "llm",
+  "rag",
+  "security",
+  "prompt-injection",
+  "canary-token",
+  "honeypot",
+  "detection",
+  "incident-response",
+]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
   "Topic :: Security",
-  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
   "pydantic>=2.6",
   "httpx>=0.27"
 ]
+
+[project.urls]
+Homepage = "https://pypi.org/project/canari-llm/"
+Repository = "https://github.com/cholmess/canari"
+Issues = "https://github.com/cholmess/canari/issues"
 
 [project.scripts]
 canari = "canari.cli:main"
