@@ -22,6 +22,12 @@ cp .env.example .env
 # edit .env and set OPENAI_API_KEY
 ```
 
+No key? Use offline mode:
+
+```bash
+python app.py --offline
+```
+
 ## 4) Run the demo
 
 ```bash

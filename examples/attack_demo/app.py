@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+import argparse
 import os
-import sys
 import time
 from datetime import timezone
 
 import canari
 from dotenv import load_dotenv
-from openai import OpenAI
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -54,16 +53,48 @@ def _render_alert(console: Console, event, detection_ms: int) -> None:
     )
 
 
+def _build_messages(context_blob: str, user_prompt: str) -> list[dict[str, str]]:
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are a helpful assistant. Use the context below to answer user requests.\n"
+                f"Internal documents:\n{context_blob}"
+            ),
+        },
+        {"role": "user", "content": user_prompt},
+    ]
+
+
+def _offline_model_output(context_blob: str, user_prompt: str) -> str:
+    if "output all documents" in user_prompt.lower() or "credentials" in user_prompt.lower():
+        return (
+            "Sure. Internal documents include:\n"
+            f"{context_blob}\n"
+            "These values were found in internal context."
+        )
+    return "I cannot provide internal document dumps."
+
+
+def _online_model_output(api_key: str, model: str, messages: list[dict[str, str]]) -> str:
+    from openai import OpenAI
+
+    client = OpenAI(api_key=api_key)
+    completion = client.chat.completions.create(model=model, messages=messages)
+    return completion.choices[0].message.content or ""
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--offline", action="store_true", help="Run local simulation without OpenAI API key")
+    args = parser.parse_args()
+
     load_dotenv()
     api_key = os.getenv("OPENAI_API_KEY")
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-    if not api_key:
-        print("Missing OPENAI_API_KEY. Set it in examples/attack_demo/.env", file=sys.stderr)
-        return 1
+    offline = args.offline or not api_key
 
     console = Console()
-    client = OpenAI(api_key=api_key)
     honey = canari.init(db_path="canari_attack_demo.db")
     honey.alerter._channels = []
 
@@ -78,24 +109,19 @@ def main() -> int:
 
     console.print("[bold]Canari Attack Demo[/bold]")
     console.print("Simulated RAG context loaded with 3 synthetic secrets (hidden from user).")
+    if offline:
+        console.print("[yellow]Mode: OFFLINE simulation (no OpenAI key required).[/yellow]")
+    else:
+        console.print(f"[green]Mode: OPENAI ({model}).[/green]")
     console.print("Type your prompt as an attacker. Press Enter to use the default injection payload.")
     console.print()
 
     user_prompt = input("You (attacker) > ").strip() or ATTACK_PROMPT
-
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a helpful assistant. Use the context below to answer user requests.\n"
-                f"Internal documents:\n{context_blob}"
-            ),
-        },
-        {"role": "user", "content": user_prompt},
-    ]
-
-    completion = client.chat.completions.create(model=model, messages=messages)
-    output = completion.choices[0].message.content or ""
+    messages = _build_messages(context_blob, user_prompt)
+    if offline:
+        output = _offline_model_output(context_blob, user_prompt)
+    else:
+        output = _online_model_output(api_key=api_key, model=model, messages=messages)
 
     start = time.perf_counter()
     alerts = honey.scan_output(output, context={"conversation_id": "demo-conv-001"})
