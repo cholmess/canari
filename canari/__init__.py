@@ -8,13 +8,15 @@ from canari.models import AlertEvent, CanaryToken, InjectionStrategy, TokenType
 from canari.registry import CanaryRegistry
 from canari.scanner import OutputScanner
 
+__version__ = "0.1.0"
+
 
 class CanariClient:
     def __init__(self, db_path: str = "canari.db"):
         self.registry = CanaryRegistry(db_path=db_path)
         self.generator = CanaryGenerator()
         self.scanner = OutputScanner(self.registry)
-        self.alerter = AlertDispatcher()
+        self.alerter = AlertDispatcher(canari_version=__version__)
         self.alerter.add_stdout()
 
     def generate(self, n_tokens: int = 1, token_types: list[str] | None = None) -> list[CanaryToken]:
@@ -51,7 +53,7 @@ class CanariClient:
             async def async_wrapped(*args, **kwargs):
                 result = await llm_fn(*args, **kwargs)
                 output = self.scanner._extract_text(result)
-                self.scan_output(output)
+                self.scan_output(output, context=self._context_from_llm_call(args, kwargs))
                 return result
 
             return async_wrapped
@@ -59,7 +61,7 @@ class CanariClient:
         def wrapped(*args, **kwargs):
             result = llm_fn(*args, **kwargs)
             output = self.scanner._extract_text(result)
-            self.scan_output(output)
+            self.scan_output(output, context=self._context_from_llm_call(args, kwargs))
             return result
 
         return wrapped
@@ -75,6 +77,29 @@ class CanariClient:
         for event in events:
             self.alerter.dispatch(event)
         return events
+
+    @staticmethod
+    def _context_from_llm_call(args, kwargs) -> dict:
+        context: dict = {}
+        metadata = kwargs.get("metadata")
+        if isinstance(metadata, dict):
+            context["session_metadata"] = metadata
+        if "conversation_id" in kwargs:
+            context["conversation_id"] = kwargs.get("conversation_id")
+        if "messages" in kwargs and "conversation_id" not in context:
+            messages = kwargs.get("messages")
+            if isinstance(messages, list):
+                for msg in messages:
+                    if isinstance(msg, dict):
+                        if "conversation_id" in msg:
+                            context["conversation_id"] = msg["conversation_id"]
+                            break
+                        if "id" in msg:
+                            context["conversation_id"] = str(msg["id"])
+                            break
+        if "session_metadata" not in context:
+            context["session_metadata"] = {"args_count": len(args), "has_messages": "messages" in kwargs}
+        return context
 
 
 def init(alert_webhook: str | None = None, db_path: str = "canari.db") -> CanariClient:

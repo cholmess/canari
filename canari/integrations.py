@@ -22,6 +22,13 @@ class ChainWrapper:
         self.scan_and_dispatch(_extract_text(result), context={"args": args})
         return result
 
+    async def ainvoke(self, payload, **kwargs):
+        if not hasattr(self.chain, "ainvoke"):
+            raise AttributeError("wrapped chain has no ainvoke()")
+        result = await self.chain.ainvoke(payload, **kwargs)
+        self.scan_and_dispatch(_extract_text(result), context={"payload": payload})
+        return result
+
 
 @dataclass
 class QueryEngineWrapper:
@@ -33,10 +40,17 @@ class QueryEngineWrapper:
         self.scan_and_dispatch(_extract_text(result), context={"query": query_text})
         return result
 
+    async def aquery(self, query_text: str, **kwargs):
+        if not hasattr(self.query_engine, "aquery"):
+            raise AttributeError("wrapped query engine has no aquery()")
+        result = await self.query_engine.aquery(query_text, **kwargs)
+        self.scan_and_dispatch(_extract_text(result), context={"query": query_text})
+        return result
+
 
 def wrap_chain(chain: Any, scan_and_dispatch: Callable[[str, dict | None], list]) -> ChainWrapper:
-    if not hasattr(chain, "invoke") and not hasattr(chain, "run"):
-        raise TypeError("chain must expose invoke() or run()")
+    if not hasattr(chain, "invoke") and not hasattr(chain, "run") and not hasattr(chain, "ainvoke"):
+        raise TypeError("chain must expose invoke(), run(), or ainvoke()")
     return ChainWrapper(chain=chain, scan_and_dispatch=scan_and_dispatch)
 
 
@@ -44,8 +58,8 @@ def wrap_query_engine(
     query_engine: Any,
     scan_and_dispatch: Callable[[str, dict | None], list],
 ) -> QueryEngineWrapper:
-    if not hasattr(query_engine, "query"):
-        raise TypeError("query_engine must expose query()")
+    if not hasattr(query_engine, "query") and not hasattr(query_engine, "aquery"):
+        raise TypeError("query_engine must expose query() or aquery()")
     return QueryEngineWrapper(query_engine=query_engine, scan_and_dispatch=scan_and_dispatch)
 
 

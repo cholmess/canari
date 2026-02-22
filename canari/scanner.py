@@ -23,6 +23,7 @@ class OutputScanner:
 
     def _rebuild_index(self) -> None:
         self._token_index.clear()
+        self._automaton = None
         if ahocorasick is not None:
             self._automaton = ahocorasick.Automaton()
         for token in self.registry.list_active():
@@ -68,6 +69,9 @@ class OutputScanner:
                     canary_id=token.id,
                     canary_value=token.value,
                     token_type=token.token_type,
+                    injection_strategy=token.injection_strategy,
+                    injection_location=token.injection_location,
+                    injected_at=token.injection_timestamp,
                     severity=self._severity_for(token, len(hits)),
                     triggered_at=datetime.now(timezone.utc),
                     conversation_id=context.get("conversation_id"),
@@ -109,10 +113,35 @@ class OutputScanner:
     def _extract_text(result) -> str:
         if isinstance(result, str):
             return result
+        if hasattr(result, "choices"):
+            choices = getattr(result, "choices", []) or []
+            if choices:
+                choice = choices[0]
+                message = getattr(choice, "message", None)
+                if message is not None and hasattr(message, "content"):
+                    content = getattr(message, "content")
+                    if isinstance(content, str):
+                        return content
+                    if isinstance(content, list):
+                        text_parts = []
+                        for item in content:
+                            if isinstance(item, str):
+                                text_parts.append(item)
+                            elif isinstance(item, dict):
+                                text_parts.append(str(item.get("text", "")))
+                            else:
+                                text_parts.append(str(getattr(item, "text", "")))
+                        return "".join(text_parts)
         if hasattr(result, "content"):
             return str(result.content)
         if isinstance(result, dict):
-            for key in ("output", "text", "content"):
+            for key in ("output", "text", "content", "answer", "result"):
                 if key in result:
                     return str(result[key])
+            if "choices" in result and result["choices"]:
+                choice = result["choices"][0]
+                if isinstance(choice, dict):
+                    msg = choice.get("message", {})
+                    if isinstance(msg, dict) and "content" in msg:
+                        return str(msg["content"])
         return str(result)

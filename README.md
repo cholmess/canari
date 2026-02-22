@@ -51,6 +51,33 @@ safe_qe = honey.wrap_query_engine(query_engine)
 response = safe_qe.query("...")
 ```
 
+## Webhook payload shape
+
+Webhook/file JSON alerts follow this structure:
+
+```json
+{
+  "canari_version": "0.1.0",
+  "alert_id": "uuid",
+  "severity": "high",
+  "triggered_at": "2026-02-22T14:30:00Z",
+  "canary": {
+    "id": "canary-uuid",
+    "type": "stripe_key",
+    "value": "sk_test_CANARI_abc123",
+    "injected_at": "2026-02-22T09:00:00Z",
+    "injection_strategy": "document_metadata",
+    "injection_location": "RAG vector store document"
+  },
+  "trigger": {
+    "output_snippet": "...",
+    "conversation_id": "conv-uuid",
+    "session_metadata": {}
+  },
+  "forensic_notes": "Token appeared in full in LLM output."
+}
+```
+
 ## Install
 
 ```bash
@@ -62,3 +89,8 @@ pip install -e .
 ```bash
 pytest
 ```
+
+## CI and release checks
+
+- CI test workflow: `.github/workflows/ci.yml`
+- Build + twine validation workflow: `.github/workflows/release-check.yml`

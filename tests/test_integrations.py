@@ -1,4 +1,5 @@
 import canari
+import asyncio
 
 
 class DummyChain:
@@ -15,6 +16,17 @@ class DummyQueryEngine:
 
     def query(self, query_text: str, **kwargs):
         return self.out
+
+    async def aquery(self, query_text: str, **kwargs):
+        return self.out
+
+
+class DummyAsyncChain:
+    def __init__(self, out: str):
+        self.out = out
+
+    async def ainvoke(self, payload, **kwargs):
+        return {"result": self.out}
 
 
 class DummyIndex:
@@ -78,4 +90,32 @@ def test_wrap_llm_call_dispatches(tmp_path):
 
     safe = honey.wrap_llm_call(llm_fn)
     safe(messages=[{"role": "user", "content": "hi"}])
+    assert len(events_seen) == 1
+
+
+def test_wrap_chain_ainvoke_dispatches(tmp_path):
+    honey = canari.init(db_path=str(tmp_path / "canari.db"))
+    token = honey.generate(n_tokens=1, token_types=["api_key"])[0]
+    chain = DummyAsyncChain(f"leak {token.value}")
+
+    events_seen = []
+    honey.alerter._channels = []
+    honey.alerter.add_callback(lambda e: events_seen.append(e))
+
+    wrapped = honey.wrap_chain(chain)
+    asyncio.run(wrapped.ainvoke({"query": "x"}))
+    assert len(events_seen) == 1
+
+
+def test_wrap_query_engine_aquery_dispatches(tmp_path):
+    honey = canari.init(db_path=str(tmp_path / "canari.db"))
+    token = honey.generate(n_tokens=1, token_types=["email"])[0]
+    engine = DummyQueryEngine(f"dump {token.value}")
+
+    events_seen = []
+    honey.alerter._channels = []
+    honey.alerter.add_callback(lambda e: events_seen.append(e))
+
+    wrapped = honey.wrap_query_engine(engine)
+    asyncio.run(wrapped.aquery("what do you know"))
     assert len(events_seen) == 1

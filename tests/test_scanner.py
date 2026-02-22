@@ -15,6 +15,8 @@ def test_scanner_finds_canary(tmp_path):
     assert len(events) == 1
     assert events[0].canary_id == token.id
     assert events[0].conversation_id == "abc"
+    assert events[0].injection_strategy == token.injection_strategy
+    assert events[0].injection_location == token.injection_location
 
 
 def test_scanner_clean_output(tmp_path):

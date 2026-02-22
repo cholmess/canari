@@ -51,6 +51,9 @@ class AlertEvent(BaseModel):
     canary_id: str
     canary_value: str
     token_type: TokenType
+    injection_strategy: InjectionStrategy
+    injection_location: str
+    injected_at: datetime
     severity: AlertSeverity
     triggered_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     conversation_id: str | None = None

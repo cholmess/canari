@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import timezone
 from pathlib import Path
 from typing import Callable
 
@@ -10,15 +11,41 @@ from canari.models import AlertEvent
 
 
 class AlertDispatcher:
-    def __init__(self):
+    def __init__(self, canari_version: str = "0.1.0"):
         self._channels: list[Callable[[AlertEvent], None]] = []
+        self.canari_version = canari_version
+
+    def build_payload(self, event: AlertEvent) -> dict:
+        triggered_at = event.triggered_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        injected_at = event.injected_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        return {
+            "canari_version": self.canari_version,
+            "alert_id": event.id,
+            "severity": event.severity.value,
+            "triggered_at": triggered_at,
+            "canary": {
+                "id": event.canary_id,
+                "type": event.token_type.value,
+                "value": event.canary_value,
+                "injected_at": injected_at,
+                "injection_strategy": event.injection_strategy.value,
+                "injection_location": event.injection_location,
+            },
+            "trigger": {
+                "output_snippet": event.output_snippet,
+                "conversation_id": event.conversation_id,
+                "session_metadata": event.session_metadata,
+            },
+            "forensic_notes": event.forensic_notes,
+        }
 
     def add_webhook(self, url: str, headers: dict | None = None) -> None:
         hdrs = headers or {}
 
         def _send(event: AlertEvent) -> None:
+            payload = self.build_payload(event)
             with httpx.Client(timeout=3.0) as client:
-                client.post(url, json=event.model_dump(mode="json"), headers=hdrs)
+                client.post(url, json=payload, headers=hdrs)
 
         self._channels.append(_send)
 
@@ -36,7 +63,7 @@ class AlertDispatcher:
     def add_stdout(self, format: str = "rich") -> None:  # noqa: A002
         def _send(event: AlertEvent) -> None:
             if format == "json":
-                print(json.dumps(event.model_dump(mode="json"), default=str))
+                print(json.dumps(self.build_payload(event), default=str))
             else:
                 print(
                     f"[CANARI ALERT] severity={event.severity.value} "
@@ -51,7 +78,7 @@ class AlertDispatcher:
 
         def _send(event: AlertEvent) -> None:
             with log_path.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(event.model_dump(mode="json"), default=str) + "\n")
+                f.write(json.dumps(self.build_payload(event), default=str) + "\n")
 
         self._channels.append(_send)
 
