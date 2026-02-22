@@ -17,6 +17,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("token-stats", help="Show token registry stats")
     sub.add_parser("alert-stats", help="Show alert stats")
+    sub.add_parser("alerter-health", help="Show alert dispatcher channel health counters")
     sub.add_parser("doctor", help="Run local DB/schema diagnostics")
     p_seed = sub.add_parser("seed", help="Generate and store canary tokens")
     p_seed.add_argument("--n", type=int, default=1)
@@ -31,6 +32,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_alerts.add_argument("--surface", default=None)
     p_alerts.add_argument("--conversation", default=None)
     p_alerts.add_argument("--incident", default=None)
+    p_alerts.add_argument("--since", default=None, help="ISO8601 lower bound for triggered_at")
+    p_alerts.add_argument("--until", default=None, help="ISO8601 upper bound for triggered_at")
 
     p_incidents = sub.add_parser("incidents", help="List recent incidents")
     p_incidents.add_argument("--limit", type=int, default=20)
@@ -51,6 +54,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_export.add_argument("--surface", default=None)
     p_export.add_argument("--conversation", default=None)
     p_export.add_argument("--incident", default=None)
+    p_export.add_argument("--since", default=None, help="ISO8601 lower bound for triggered_at")
+    p_export.add_argument("--until", default=None, help="ISO8601 upper bound for triggered_at")
 
     p_purge = sub.add_parser("purge-alerts", help="Delete old alert events from local journal")
     p_purge.add_argument("--older-than-days", type=int, required=True)
@@ -79,6 +84,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "alert-stats":
         print(encoder(honey.alert_stats()))
         return 0
+    if args.cmd == "alerter-health":
+        print(encoder(honey.alerter_health()))
+        return 0
     if args.cmd == "doctor":
         print(encoder(honey.doctor()))
         return 0
@@ -99,6 +107,8 @@ def main(argv: list[str] | None = None) -> int:
             detection_surface=args.surface,
             conversation_id=args.conversation,
             incident_id=args.incident,
+            since=args.since,
+            until=args.until,
         )
         print(encoder([a.model_dump(mode="json") for a in alerts]))
         return 0
@@ -130,6 +140,8 @@ def main(argv: list[str] | None = None) -> int:
                 detection_surface=args.surface,
                 conversation_id=args.conversation,
                 incident_id=args.incident,
+                since=args.since,
+                until=args.until,
             )
         else:
             n = honey.export_alerts_csv(
@@ -139,6 +151,8 @@ def main(argv: list[str] | None = None) -> int:
                 detection_surface=args.surface,
                 conversation_id=args.conversation,
                 incident_id=args.incident,
+                since=args.since,
+                until=args.until,
             )
         print(encoder({"exported": n, "path": args.out, "format": args.format}))
         return 0

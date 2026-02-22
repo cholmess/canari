@@ -186,16 +186,19 @@ CLI usage:
 canari --db canari.db token-stats
 canari --db canari.db --compact token-stats
 canari --db canari.db alert-stats
+canari --db canari.db alerter-health
 canari --db canari.db doctor
 canari --db canari.db seed --n 5 --types api_key,email,stripe_key
 canari --db canari.db rotate-canaries --n 5 --types api_key,email
 canari --db canari.db alerts --limit 20 --severity critical
 canari --db canari.db alerts --incident inc-conv-123-456
+canari --db canari.db alerts --since 2026-02-01T00:00:00+00:00 --until 2026-02-28T23:59:59+00:00
 canari --db canari.db incidents --limit 20
 canari --db canari.db forensic-summary --limit 5000
 canari --db canari.db incident-replay --incident inc-conv-123-456 --out /tmp/incident.jsonl
 canari --db canari.db scan-text --text "leak sk_test_CANARI_x" --conversation conv-1
 canari --db canari.db export --format jsonl --out /tmp/canari-alerts.jsonl
+canari --db canari.db export --format csv --out /tmp/canari-alerts.csv --since 2026-02-01T00:00:00+00:00
 canari --db canari.db purge-alerts --older-than-days 30
 canari --db canari.db backup-db --out /tmp/canari-backup.db
 ```

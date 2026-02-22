@@ -173,6 +173,8 @@ class CanariClient:
         detection_surface: str | None = None,
         conversation_id: str | None = None,
         incident_id: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
     ):
         return self.registry.list_alerts(
             limit=limit,
@@ -180,6 +182,8 @@ class CanariClient:
             detection_surface=detection_surface,
             conversation_id=conversation_id,
             incident_id=incident_id,
+            since=since,
+            until=until,
         )
 
     def alert_stats(self) -> dict:
@@ -193,6 +197,9 @@ class CanariClient:
 
     def doctor(self) -> dict:
         return self.registry.doctor()
+
+    def alerter_health(self) -> dict:
+        return self.alerter.health()
 
     def set_alert_rate_limit(self, *, window_seconds: int = 60, max_dispatches: int = 3) -> None:
         self.rate_limiter = AlertRateLimiter(window_seconds=window_seconds, max_dispatches=max_dispatches)
@@ -215,6 +222,8 @@ class CanariClient:
         detection_surface: str | None = None,
         conversation_id: str | None = None,
         incident_id: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
     ) -> int:
         return self.exporter.export_jsonl(
             path,
@@ -223,6 +232,8 @@ class CanariClient:
             detection_surface=detection_surface,
             conversation_id=conversation_id,
             incident_id=incident_id,
+            since=since,
+            until=until,
         )
 
     def export_alerts_csv(
@@ -234,6 +245,8 @@ class CanariClient:
         detection_surface: str | None = None,
         conversation_id: str | None = None,
         incident_id: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
     ) -> int:
         return self.exporter.export_csv(
             path,
@@ -242,6 +255,8 @@ class CanariClient:
             detection_surface=detection_surface,
             conversation_id=conversation_id,
             incident_id=incident_id,
+            since=since,
+            until=until,
         )
 
     def recent_incidents(self, limit: int = 50):

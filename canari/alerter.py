@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import timezone
 from pathlib import Path
 from typing import Callable
@@ -14,6 +15,8 @@ class AlertDispatcher:
     def __init__(self, canari_version: str = "0.1.0"):
         self._channels: list[Callable[[AlertEvent], None]] = []
         self.canari_version = canari_version
+        self.dispatch_successes = 0
+        self.dispatch_failures = 0
 
     def build_payload(self, event: AlertEvent) -> dict:
         triggered_at = event.triggered_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -42,24 +45,41 @@ class AlertDispatcher:
             "forensic_notes": event.forensic_notes,
         }
 
-    def add_webhook(self, url: str, headers: dict | None = None) -> None:
+    def add_webhook(
+        self,
+        url: str,
+        headers: dict | None = None,
+        *,
+        retries: int = 1,
+        backoff_seconds: float = 0.25,
+    ) -> None:
         hdrs = headers or {}
 
         def _send(event: AlertEvent) -> None:
             payload = self.build_payload(event)
-            with httpx.Client(timeout=3.0) as client:
-                client.post(url, json=payload, headers=hdrs)
+            self._post_with_retry(
+                url=url,
+                payload=payload,
+                headers=hdrs,
+                retries=retries,
+                backoff_seconds=backoff_seconds,
+            )
 
         self._channels.append(_send)
 
-    def add_slack(self, webhook_url: str) -> None:
+    def add_slack(self, webhook_url: str, *, retries: int = 1, backoff_seconds: float = 0.25) -> None:
         def _send(event: AlertEvent) -> None:
             text = (
                 f"[CANARI] {event.severity.value.upper()} token leak detected: "
                 f"{event.token_type.value} {event.canary_value}"
             )
-            with httpx.Client(timeout=3.0) as client:
-                client.post(webhook_url, json={"text": text})
+            self._post_with_retry(
+                url=webhook_url,
+                payload={"text": text},
+                headers={},
+                retries=retries,
+                backoff_seconds=backoff_seconds,
+            )
 
         self._channels.append(_send)
 
@@ -92,6 +112,45 @@ class AlertDispatcher:
         for channel in self._channels:
             try:
                 channel(event)
+                self.dispatch_successes += 1
             except Exception:
                 # Alert dispatch never crashes application code.
+                self.dispatch_failures += 1
                 continue
+
+    def health(self) -> dict:
+        return {
+            "channels": len(self._channels),
+            "dispatch_successes": self.dispatch_successes,
+            "dispatch_failures": self.dispatch_failures,
+        }
+
+    @staticmethod
+    def _sleep(seconds: float) -> None:
+        if seconds > 0:
+            time.sleep(seconds)
+
+    def _post_with_retry(
+        self,
+        *,
+        url: str,
+        payload: dict,
+        headers: dict,
+        retries: int,
+        backoff_seconds: float,
+    ) -> None:
+        attempts = max(1, retries)
+        last_err = None
+        for attempt in range(attempts):
+            try:
+                with httpx.Client(timeout=3.0) as client:
+                    resp = client.post(url, json=payload, headers=headers)
+                if hasattr(resp, "is_success") and not resp.is_success:
+                    raise RuntimeError(f"non-success response from alert channel: {getattr(resp, 'status_code', 'unknown')}")
+                return
+            except Exception as exc:
+                last_err = exc
+                if attempt < attempts - 1:
+                    self._sleep(backoff_seconds)
+        if last_err is not None:
+            raise last_err

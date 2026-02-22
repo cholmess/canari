@@ -21,6 +21,8 @@ class AlertExporter:
         detection_surface: str | None = None,
         conversation_id: str | None = None,
         incident_id: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
     ) -> int:
         alerts = self.registry.list_alerts(
             limit=limit,
@@ -28,6 +30,8 @@ class AlertExporter:
             detection_surface=detection_surface,
             conversation_id=conversation_id,
             incident_id=incident_id,
+            since=since,
+            until=until,
         )
         out = Path(path)
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -45,6 +49,8 @@ class AlertExporter:
         detection_surface: str | None = None,
         conversation_id: str | None = None,
         incident_id: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
     ) -> int:
         alerts = self.registry.list_alerts(
             limit=limit,
@@ -52,6 +58,8 @@ class AlertExporter:
             detection_surface=detection_surface,
             conversation_id=conversation_id,
             incident_id=incident_id,
+            since=since,
+            until=until,
         )
         out = Path(path)
         out.parent.mkdir(parents=True, exist_ok=True)
