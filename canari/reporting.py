@@ -11,8 +11,19 @@ class ForensicReporter:
     def __init__(self, registry: CanaryRegistry):
         self.registry = registry
 
-    def incident_report(self, incident_id: str) -> dict:
-        alerts = self.registry.list_alerts(limit=1000, incident_id=incident_id)
+    def incident_report(
+        self,
+        incident_id: str,
+        *,
+        tenant_id: str | None = None,
+        application_id: str | None = None,
+    ) -> dict:
+        alerts = self.registry.list_alerts(
+            limit=1000,
+            incident_id=incident_id,
+            tenant_id=tenant_id,
+            application_id=application_id,
+        )
         if not alerts:
             return {
                 "incident_id": incident_id,
@@ -139,6 +150,144 @@ class ForensicReporter:
                 f"{sig_id}|{name}|{sev}|{' '.join(ext_parts)}"
             )
         return out
+
+    def compliance_evidence_pack(
+        self,
+        *,
+        limit: int = 5000,
+        tenant_id: str | None = None,
+        application_id: str | None = None,
+    ) -> dict:
+        summary = self.forensic_summary(limit=limit, tenant_id=tenant_id, application_id=application_id)
+        alerts = self.registry.list_alerts(
+            limit=min(limit, 5000),
+            tenant_id=tenant_id,
+            application_id=application_id,
+        )
+        incidents = {}
+        for a in alerts:
+            if a.incident_id:
+                incidents[a.incident_id] = incidents.get(a.incident_id, 0) + 1
+        audit_tail = self.registry.list_audit(limit=200, offset=0)
+        recent_policy_actions = [
+            row for row in audit_tail if row["action"] in {"persist_policy", "policy_set_api", "set_scoped_retention_policy"}
+        ][:20]
+        recent_key_actions = [
+            row for row in audit_tail if row["action"] in {"create_api_key", "revoke_api_key", "rotate_api_key"}
+        ][:20]
+
+        return {
+            "evidence_version": "v1",
+            "schema_version": 1,
+            "scope": {"tenant_id": tenant_id, "application_id": application_id},
+            "summary": summary,
+            "controls": {
+                "policy_settings": self.registry.settings(),
+                "retention_policies": self.registry.list_retention_policies(),
+                "api_keys_metadata": self.registry.list_api_keys(include_inactive=True),
+            },
+            "operations": {
+                "audit_recent_policy_actions": recent_policy_actions,
+                "audit_recent_api_key_actions": recent_key_actions,
+                "incident_count": len(incidents),
+                "top_incidents": sorted(
+                    [{"incident_id": k, "event_count": v} for k, v in incidents.items()],
+                    key=lambda r: r["event_count"],
+                    reverse=True,
+                )[:10],
+            },
+            "siem_samples": {
+                "json_events": self.siem_events(
+                    limit=min(100, max(1, limit)),
+                    tenant_id=tenant_id,
+                    application_id=application_id,
+                ),
+                "cef_events": self.siem_cef_events(
+                    limit=min(100, max(1, limit)),
+                    tenant_id=tenant_id,
+                    application_id=application_id,
+                ),
+            },
+        }
+
+    def incident_dossier(
+        self,
+        incident_id: str,
+        *,
+        tenant_id: str | None = None,
+        application_id: str | None = None,
+    ) -> dict:
+        report = self.incident_report(
+            incident_id,
+            tenant_id=tenant_id,
+            application_id=application_id,
+        )
+        if not report.get("found"):
+            return {
+                "dossier_version": "v1",
+                "incident_id": incident_id,
+                "found": False,
+                "scope": {"tenant_id": tenant_id, "application_id": application_id},
+                "incident": report,
+            }
+
+        incident_events = self.registry.list_alerts(
+            limit=5000,
+            incident_id=incident_id,
+            tenant_id=tenant_id,
+            application_id=application_id,
+        )
+        by_severity: dict[str, int] = {}
+        by_surface: dict[str, int] = {}
+        by_token: dict[str, int] = {}
+        for a in incident_events:
+            by_severity[a.severity.value] = by_severity.get(a.severity.value, 0) + 1
+            by_surface[a.detection_surface] = by_surface.get(a.detection_surface, 0) + 1
+            by_token[a.token_type.value] = by_token.get(a.token_type.value, 0) + 1
+
+        audit_recent = self.registry.list_audit(limit=500, offset=0)
+        policy_actions = [
+            row for row in audit_recent if row["action"] in {"persist_policy", "policy_set_api", "set_scoped_retention_policy"}
+        ][:25]
+        response_actions = [
+            row
+            for row in audit_recent
+            if row["action"] in {"rotate_canaries", "purge_alerts", "apply_retention_policy", "apply_scoped_retention_policies"}
+        ][:25]
+
+        return {
+            "dossier_version": "v1",
+            "incident_id": incident_id,
+            "found": True,
+            "scope": {"tenant_id": tenant_id, "application_id": application_id},
+            "incident": report,
+            "impact_summary": {
+                "event_count": len(incident_events),
+                "by_severity": by_severity,
+                "by_surface": by_surface,
+                "by_token_type": by_token,
+            },
+            "control_snapshot": {
+                "settings": self.registry.settings(),
+                "retention_policies": self.registry.list_retention_policies(),
+            },
+            "response_audit": {
+                "policy_actions": policy_actions,
+                "response_actions": response_actions,
+            },
+            "siem_extracts": {
+                "json_events": self.siem_events(
+                    limit=250,
+                    tenant_id=tenant_id,
+                    application_id=application_id,
+                ),
+                "cef_events": self.siem_cef_events(
+                    limit=250,
+                    tenant_id=tenant_id,
+                    application_id=application_id,
+                ),
+            },
+        }
 
 
 def _to_z(dt: datetime) -> str:

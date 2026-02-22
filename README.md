@@ -56,8 +56,13 @@ print(alerts)
 - API key rotation (`api-keys rotate`) and `last_used_at` tracking
 - FastAPI admin endpoints for API key management (`/v1/api-keys*`)
 - Persisted retention policy (`policy set --retention-days`, `apply-retention`)
+- Scoped retention policy profiles (`retention-policy set/list/apply`)
 - SIEM-oriented normalized event export (`siem-export`, `/v1/siem/events`)
 - CEF export for SIEM connectors (`siem-export --format cef`, `/v1/siem/cef`)
+- SIEM inbound ingestion (`siem-ingest`, `/v1/siem/ingest`, `/v1/siem/external`)
+- Control-plane bundle export/import (`control-plane-export/import`, `/v1/control-plane/*`)
+- Compliance evidence pack export (`evidence-pack`, `/v1/compliance/evidence`)
+- Incident dossier export for investigations (`incident-dossier`, `/v1/compliance/incidents/{incident_id}`)
 - Scoped alert-stat snapshots (`alert-stats --tenant/--app`, `/v1/alert-stats`)
 
 ## Integration patterns
@@ -245,6 +250,9 @@ canari --db canari.db policy show
 canari --db canari.db policy set --min-severity high --rate-window 120 --rate-max 4 --retention-days 30
 canari --db canari.db apply-retention
 canari --db canari.db apply-retention --app support-assistant
+canari --db canari.db retention-policy set --retention-days 14 --tenant acme-prod --app support-assistant
+canari --db canari.db retention-policy list
+canari --db canari.db retention-policy apply
 canari --db canari.db seed --n 5 --types api_key,email,stripe_key
 canari --db canari.db seed --n 3 --types api_key --tenant acme-prod --app support-assistant
 canari --db canari.db rotate-canaries --n 5 --types api_key,email
@@ -255,6 +263,7 @@ canari --db canari.db alerts --tenant acme-prod --limit 50
 canari --db canari.db alerts --app support-assistant --limit 50
 canari --db canari.db alerts --since 2026-02-01T00:00:00+00:00 --until 2026-02-28T23:59:59+00:00
 canari --db canari.db incidents --limit 20
+canari --db canari.db incident-report inc-conv-123-456 --app support-assistant
 canari --db canari.db forensic-summary --limit 5000
 canari --db canari.db threat-feed --limit 5000
 canari --db canari.db threat-share show
@@ -270,6 +279,8 @@ canari --db canari.db incident-replay --incident inc-conv-123-456 --out /tmp/inc
 canari --db canari.db siem-export --limit 1000 --out /tmp/canari-siem.jsonl
 canari --db canari.db siem-export --limit 1000 --app support-assistant --out /tmp/canari-siem-app.jsonl
 canari --db canari.db siem-export --limit 1000 --format cef --out /tmp/canari-siem.cef
+canari --db canari.db siem-ingest --in /tmp/external-events.json --source splunk
+canari --db canari.db siem-external --limit 200 --offset 0
 canari --db canari.db scan-text --text "leak sk_test_CANARI_x" --conversation conv-1
 canari --db canari.db export --format jsonl --out /tmp/canari-alerts.jsonl
 canari --db canari.db export --format csv --out /tmp/canari-alerts.csv --since 2026-02-01T00:00:00+00:00
@@ -278,6 +289,12 @@ canari --db canari.db export --format jsonl --out /tmp/canari-redacted.jsonl --r
 canari --db canari.db purge-alerts --older-than-days 30
 canari --db canari.db purge-alerts --older-than-days 30 --tenant acme-prod --app support-assistant
 canari --db canari.db backup-db --out /tmp/canari-backup.db
+canari --db canari.db control-plane-export --out /tmp/canari-control-plane.json
+canari --db canari.db control-plane-validate --in /tmp/canari-control-plane.json
+canari --db canari.db control-plane-import --in /tmp/canari-control-plane.json --source migration
+canari --db canari.db control-plane-import --in /tmp/canari-control-plane.json --dry-run
+canari --db canari.db evidence-pack --limit 5000 --app support-assistant --out /tmp/canari-evidence.json
+canari --db canari.db incident-dossier --incident inc-conv-123-456 --app support-assistant --out /tmp/canari-incident-dossier.json
 canari --db canari.db serve-dashboard --host 127.0.0.1 --port 8080
 canari --db canari.db serve-dashboard --host 127.0.0.1 --port 8080 --api-token secret123
 canari --db canari.db serve-api --host 127.0.0.1 --port 8000 --api-key secret123

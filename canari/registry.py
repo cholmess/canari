@@ -143,6 +143,40 @@ class CanaryRegistry:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_network_signatures_count ON network_signatures(count DESC)"
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS external_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    event_type TEXT,
+                    severity TEXT,
+                    tenant_id TEXT,
+                    application_id TEXT,
+                    payload TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_external_events_ts ON external_events(ts DESC)"
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS retention_policies (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tenant_id TEXT,
+                    application_id TEXT,
+                    retention_days INTEGER NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_retention_policy_scope
+                ON retention_policies(tenant_id, application_id)
+                """
+            )
             # Lightweight migration for existing DBs.
             token_cols = {row["name"] for row in conn.execute("PRAGMA table_info(canary_tokens)").fetchall()}
             if "tenant_id" not in token_cols:
@@ -242,6 +276,105 @@ class CanaryRegistry:
                 "first_seen": row["first_seen"],
                 "last_seen": row["last_seen"],
                 "count": int(row["count"]),
+            }
+            for row in rows
+        ]
+
+    def record_external_event(
+        self,
+        *,
+        source: str,
+        payload: dict,
+        event_type: str | None = None,
+        severity: str | None = None,
+        tenant_id: str | None = None,
+        application_id: str | None = None,
+    ) -> int:
+        ts = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO external_events (ts, source, event_type, severity, tenant_id, application_id, payload)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    ts,
+                    source,
+                    event_type,
+                    severity,
+                    tenant_id,
+                    application_id,
+                    json.dumps(payload),
+                ),
+            )
+            return int(cur.lastrowid)
+
+    def list_external_events(self, *, limit: int = 200, offset: int = 0) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, ts, source, event_type, severity, tenant_id, application_id, payload
+                FROM external_events
+                ORDER BY ts DESC, id DESC
+                LIMIT ? OFFSET ?
+                """,
+                (max(1, limit), max(0, offset)),
+            ).fetchall()
+        return [
+            {
+                "id": int(row["id"]),
+                "ts": row["ts"],
+                "source": row["source"],
+                "event_type": row["event_type"],
+                "severity": row["severity"],
+                "tenant_id": row["tenant_id"],
+                "application_id": row["application_id"],
+                "payload": json.loads(row["payload"]),
+            }
+            for row in rows
+        ]
+
+    def upsert_retention_policy(
+        self,
+        *,
+        retention_days: int,
+        tenant_id: str | None = None,
+        application_id: str | None = None,
+    ) -> dict:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO retention_policies (tenant_id, application_id, retention_days, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(tenant_id, application_id) DO UPDATE SET
+                    retention_days = excluded.retention_days,
+                    updated_at = excluded.updated_at
+                """,
+                (tenant_id, application_id, int(retention_days), now),
+            )
+        return {
+            "tenant_id": tenant_id,
+            "application_id": application_id,
+            "retention_days": int(retention_days),
+            "updated_at": now,
+        }
+
+    def list_retention_policies(self) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT tenant_id, application_id, retention_days, updated_at
+                FROM retention_policies
+                ORDER BY COALESCE(tenant_id, ''), COALESCE(application_id, '')
+                """
+            ).fetchall()
+        return [
+            {
+                "tenant_id": row["tenant_id"],
+                "application_id": row["application_id"],
+                "retention_days": int(row["retention_days"]),
+                "updated_at": row["updated_at"],
             }
             for row in rows
         ]

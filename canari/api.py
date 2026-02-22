@@ -138,6 +138,21 @@ def create_app(db_path: str = "canari.db", api_key: str | None = None):
         out.sort(key=lambda x: x["last_seen"], reverse=True)
         return out[:limit]
 
+    @app.get("/v1/incidents/{incident_id}")
+    def incident_detail(
+        incident_id: str,
+        app: str | None = None,
+        tenant: str | None = None,
+        principal: dict = Depends(_auth),
+    ):
+        tenant_scope = principal.get("tenant_id")
+        app_scope = principal.get("application_id")
+        return reporter.incident_report(
+            incident_id,
+            tenant_id=tenant_scope or tenant,
+            application_id=app_scope or app,
+        )
+
     @app.get("/v1/siem/events")
     def siem_events(
         limit: Annotated[int, Query(ge=1, le=50000)] = 1000,
@@ -159,6 +174,26 @@ def create_app(db_path: str = "canari.db", api_key: str | None = None):
         tenant_scope = principal.get("tenant_id")
         app_scope = principal.get("application_id")
         return reporter.siem_cef_events(limit=limit, tenant_id=tenant_scope, application_id=app_scope or app)
+
+    @app.post("/v1/siem/ingest")
+    def siem_ingest(payload: dict = Body(...), principal: dict = Depends(_auth)):
+        _require_role(principal, "admin")
+        source = payload.get("source", "siem")
+        events = payload.get("events", [])
+        if not isinstance(events, list):
+            raise HTTPException(status_code=400, detail="events must be a list")
+        out = intel.ingest_external_events(events, source=source)
+        registry.record_audit("siem_ingest_api", out)
+        return out
+
+    @app.get("/v1/siem/external")
+    def siem_external(
+        limit: Annotated[int, Query(ge=1, le=5000)] = 200,
+        offset: Annotated[int, Query(ge=0)] = 0,
+        principal: dict = Depends(_auth),
+    ):
+        _require_role(principal, "admin")
+        return registry.list_external_events(limit=limit, offset=offset)
 
     @app.get("/v1/audit")
     def audit(
@@ -325,6 +360,178 @@ def create_app(db_path: str = "canari.db", api_key: str | None = None):
 
         registry.record_audit("policy_set_api", payload)
         return {"saved": True, "policy": policy_get(principal)}
+
+    @app.get("/v1/retention-policies")
+    def retention_policies(principal: dict = Depends(_auth)):
+        _require_role(principal, "admin")
+        return registry.list_retention_policies()
+
+    @app.post("/v1/retention-policies")
+    def retention_policy_set(payload: dict = Body(...), principal: dict = Depends(_auth)):
+        _require_role(principal, "admin")
+        days = int(payload.get("retention_days", 0))
+        if days <= 0:
+            raise HTTPException(status_code=400, detail="retention_days must be > 0")
+        tenant_id = payload.get("tenant_id")
+        application_id = payload.get("application_id")
+        out = registry.upsert_retention_policy(
+            retention_days=days,
+            tenant_id=tenant_id,
+            application_id=application_id,
+        )
+        registry.record_audit("retention_policy_set_api", out)
+        return out
+
+    @app.post("/v1/retention-policies/apply")
+    def retention_policy_apply(principal: dict = Depends(_auth)):
+        _require_role(principal, "admin")
+        policies = registry.list_retention_policies()
+        results = []
+        total_removed = 0
+        for p in policies:
+            removed = registry.purge_alerts_older_than(
+                days=int(p["retention_days"]),
+                tenant_id=p.get("tenant_id"),
+                application_id=p.get("application_id"),
+            )
+            results.append(
+                {
+                    "tenant_id": p.get("tenant_id"),
+                    "application_id": p.get("application_id"),
+                    "retention_days": int(p["retention_days"]),
+                    "removed": removed,
+                }
+            )
+            total_removed += removed
+        out = {"policies_applied": len(policies), "total_removed": total_removed, "results": results}
+        registry.record_audit("retention_policies_apply_api", out)
+        return out
+
+    @app.get("/v1/control-plane/export")
+    def control_plane_export(principal: dict = Depends(_auth)):
+        _require_role(principal, "admin")
+        return {
+            "schema": "canari-control-plane-v1",
+            "schema_version": 1,
+            "settings": registry.settings(),
+            "retention_policies": registry.list_retention_policies(),
+            "network_signatures": registry.list_network_signatures(limit=100000, offset=0),
+            "api_keys_metadata": registry.list_api_keys(include_inactive=True),
+        }
+
+    @app.post("/v1/control-plane/import")
+    def control_plane_import(
+        payload: dict = Body(...),
+        dry_run: bool = False,
+        principal: dict = Depends(_auth),
+    ):
+        _require_role(principal, "admin")
+        source = payload.get("source", "control_plane_import_api")
+        settings = payload.get("settings", {}) or {}
+        if not dry_run:
+            for k, v in settings.items():
+                registry.set_setting(str(k), str(v))
+
+        ret_rows = payload.get("retention_policies", []) or []
+        ret_applied = 0
+        for row in ret_rows:
+            if not isinstance(row, dict):
+                continue
+            days = int(row.get("retention_days", 0))
+            if days <= 0:
+                continue
+            if not dry_run:
+                registry.upsert_retention_policy(
+                    retention_days=days,
+                    tenant_id=row.get("tenant_id"),
+                    application_id=row.get("application_id"),
+                )
+            ret_applied += 1
+
+        sig_rows = payload.get("network_signatures", []) or []
+        sig_imported = len(sig_rows) if dry_run else registry.upsert_network_signatures(sig_rows, source=source)
+        out = {
+            "settings_applied": len(settings),
+            "retention_policies_applied": ret_applied,
+            "network_signatures_imported": sig_imported,
+            "api_keys_metadata_seen": len(payload.get("api_keys_metadata", []) or []),
+            "dry_run": dry_run,
+        }
+        if not dry_run:
+            registry.record_audit("control_plane_import_api", out | {"source": source})
+        return out
+
+    @app.post("/v1/control-plane/validate")
+    def control_plane_validate(payload: dict = Body(...), principal: dict = Depends(_auth)):
+        _require_role(principal, "admin")
+        errors: list[str] = []
+        warnings: list[str] = []
+        if not isinstance(payload, dict):
+            return {"ok": False, "errors": ["payload must be an object"], "warnings": [], "counts": {}}
+        schema = payload.get("schema")
+        if schema not in (None, "canari-control-plane-v1"):
+            warnings.append(f"unexpected schema '{schema}'")
+        if payload.get("schema_version") not in (None, 1):
+            warnings.append(f"unexpected schema_version '{payload.get('schema_version')}'")
+        settings = payload.get("settings", {})
+        if settings is not None and not isinstance(settings, dict):
+            errors.append("settings must be an object")
+            settings = {}
+        ret = payload.get("retention_policies", [])
+        if ret is not None and not isinstance(ret, list):
+            errors.append("retention_policies must be a list")
+            ret = []
+        sig = payload.get("network_signatures", [])
+        if sig is not None and not isinstance(sig, list):
+            errors.append("network_signatures must be a list")
+            sig = []
+        keys = payload.get("api_keys_metadata", [])
+        if keys is not None and not isinstance(keys, list):
+            errors.append("api_keys_metadata must be a list")
+            keys = []
+        return {
+            "ok": len(errors) == 0,
+            "errors": errors,
+            "warnings": warnings,
+            "counts": {
+                "settings": len(settings),
+                "retention_policies": len(ret),
+                "network_signatures": len(sig),
+                "api_keys_metadata": len(keys),
+            },
+        }
+
+    @app.get("/v1/compliance/evidence")
+    def compliance_evidence(
+        limit: Annotated[int, Query(ge=1, le=50000)] = 5000,
+        tenant: str | None = None,
+        app: str | None = None,
+        principal: dict = Depends(_auth),
+    ):
+        _require_role(principal, "admin")
+        tenant_scope = principal.get("tenant_id")
+        app_scope = principal.get("application_id")
+        return reporter.compliance_evidence_pack(
+            limit=limit,
+            tenant_id=tenant_scope or tenant,
+            application_id=app_scope or app,
+        )
+
+    @app.get("/v1/compliance/incidents/{incident_id}")
+    def compliance_incident_dossier(
+        incident_id: str,
+        tenant: str | None = None,
+        app: str | None = None,
+        principal: dict = Depends(_auth),
+    ):
+        _require_role(principal, "admin")
+        tenant_scope = principal.get("tenant_id")
+        app_scope = principal.get("application_id")
+        return reporter.incident_dossier(
+            incident_id,
+            tenant_id=tenant_scope or tenant,
+            application_id=app_scope or app,
+        )
 
     return app
 

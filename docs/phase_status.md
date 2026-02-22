@@ -41,11 +41,16 @@
 - [x] Scoped token generation and scoped matching (tenant/application aware tokens)
 - [x] Redacted exports for compliance
 - [x] Scoped retention application (tenant/application-aware purge)
+- [x] Scoped retention policy profiles (set/list/apply by tenant/application)
 - [x] Webhook payload signing + verification
 - [x] Persisted policy controls and audit log
 - [x] Dashboard API token gate
 - [x] SIEM-style normalized event API/export (`/v1/siem/events`, `siem-export`)
 - [x] SIEM CEF export path (`/v1/siem/cef`, `siem-export --format cef`)
+- [x] SIEM inbound ingest + external event journal (`/v1/siem/ingest`, `/v1/siem/external`)
+- [x] Control-plane export/import bundle for environment migration
+- [x] Compliance evidence pack generation (CLI/API)
+- [x] Incident dossier generation for compliance investigations
 
 ## Current Test Status
 - `pytest`: passing (with one sandbox-related dashboard socket test skip)

@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 
 from canari.adapters import patch_openai_client, wrap_runnable
 from canari.alerter import AlertDispatcher
@@ -268,6 +269,106 @@ class CanariClient:
         self.registry.record_audit("backup_db", {"path": path, "bytes": size})
         return size
 
+    def export_control_plane_bundle(self) -> dict:
+        return {
+            "schema": "canari-control-plane-v1",
+            "schema_version": 1,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "settings": self.registry.settings(),
+            "retention_policies": self.registry.list_retention_policies(),
+            "network_signatures": self.registry.list_network_signatures(limit=100000, offset=0),
+            "api_keys_metadata": self.registry.list_api_keys(include_inactive=True),
+        }
+
+    def validate_control_plane_bundle(self, payload: dict) -> dict:
+        errors: list[str] = []
+        warnings: list[str] = []
+        if not isinstance(payload, dict):
+            return {"ok": False, "errors": ["payload must be an object"], "warnings": [], "counts": {}}
+        schema = payload.get("schema")
+        if schema not in (None, "canari-control-plane-v1"):
+            warnings.append(f"unexpected schema '{schema}'")
+        if payload.get("schema_version") not in (None, 1):
+            warnings.append(f"unexpected schema_version '{payload.get('schema_version')}'")
+
+        settings = payload.get("settings", {})
+        if settings is not None and not isinstance(settings, dict):
+            errors.append("settings must be an object")
+            settings = {}
+        ret = payload.get("retention_policies", [])
+        if ret is not None and not isinstance(ret, list):
+            errors.append("retention_policies must be a list")
+            ret = []
+        sig = payload.get("network_signatures", [])
+        if sig is not None and not isinstance(sig, list):
+            errors.append("network_signatures must be a list")
+            sig = []
+        keys = payload.get("api_keys_metadata", [])
+        if keys is not None and not isinstance(keys, list):
+            errors.append("api_keys_metadata must be a list")
+            keys = []
+
+        return {
+            "ok": len(errors) == 0,
+            "errors": errors,
+            "warnings": warnings,
+            "counts": {
+                "settings": len(settings),
+                "retention_policies": len(ret),
+                "network_signatures": len(sig),
+                "api_keys_metadata": len(keys),
+            },
+        }
+
+    def import_control_plane_bundle(
+        self,
+        payload: dict,
+        *,
+        source: str = "control_plane_import",
+        dry_run: bool = False,
+    ) -> dict:
+        valid = self.validate_control_plane_bundle(payload)
+        if not valid["ok"]:
+            raise ValueError(f"invalid control-plane bundle: {valid['errors']}")
+        settings = payload.get("settings", {}) or {}
+        if not dry_run:
+            for k, v in settings.items():
+                self.registry.set_setting(str(k), str(v))
+
+        ret_rows = payload.get("retention_policies", []) or []
+        ret_applied = 0
+        for row in ret_rows:
+            if not isinstance(row, dict):
+                continue
+            days = int(row.get("retention_days", 0))
+            if days <= 0:
+                continue
+            if not dry_run:
+                self.registry.upsert_retention_policy(
+                    retention_days=days,
+                    tenant_id=row.get("tenant_id"),
+                    application_id=row.get("application_id"),
+                )
+            ret_applied += 1
+
+        sig_rows = payload.get("network_signatures", []) or []
+        sig_imported = len(sig_rows) if dry_run else self.registry.upsert_network_signatures(sig_rows, source=source)
+
+        # API keys cannot be reconstructed without plaintext key material.
+        keys_meta = payload.get("api_keys_metadata", []) or []
+
+        out = {
+            "settings_applied": len(settings),
+            "retention_policies_applied": ret_applied,
+            "network_signatures_imported": sig_imported,
+            "api_keys_metadata_seen": len(keys_meta),
+            "dry_run": dry_run,
+        }
+        if not dry_run:
+            self.registry.record_audit("import_control_plane_bundle", out | {"source": source})
+            self.load_policy()
+        return out
+
     def doctor(self) -> dict:
         return self.registry.doctor()
 
@@ -413,6 +514,49 @@ class CanariClient:
             "application_id": application_id,
         }
 
+    def set_scoped_retention_policy(
+        self,
+        *,
+        retention_days: int,
+        tenant_id: str | None = None,
+        application_id: str | None = None,
+    ) -> dict:
+        if int(retention_days) <= 0:
+            raise ValueError("retention_days must be > 0")
+        out = self.registry.upsert_retention_policy(
+            retention_days=int(retention_days),
+            tenant_id=tenant_id,
+            application_id=application_id,
+        )
+        self.registry.record_audit("set_scoped_retention_policy", out)
+        return out
+
+    def scoped_retention_policies(self) -> list[dict]:
+        return self.registry.list_retention_policies()
+
+    def apply_scoped_retention_policies(self) -> dict:
+        policies = self.registry.list_retention_policies()
+        applied = []
+        total_removed = 0
+        for p in policies:
+            removed = self.purge_alerts_older_than(
+                days=int(p["retention_days"]),
+                tenant_id=p.get("tenant_id"),
+                application_id=p.get("application_id"),
+            )
+            applied.append(
+                {
+                    "tenant_id": p.get("tenant_id"),
+                    "application_id": p.get("application_id"),
+                    "retention_days": int(p["retention_days"]),
+                    "removed": removed,
+                }
+            )
+            total_removed += removed
+        out = {"policies_applied": len(policies), "total_removed": total_removed, "results": applied}
+        self.registry.record_audit("apply_scoped_retention_policies", out)
+        return out
+
     def forensic_summary(
         self,
         limit: int = 5000,
@@ -437,8 +581,44 @@ class CanariClient:
     ) -> list[str]:
         return self.reporter.siem_cef_events(limit=limit, tenant_id=tenant_id, application_id=application_id)
 
-    def incident_report(self, incident_id: str) -> dict:
-        return self.reporter.incident_report(incident_id)
+    def compliance_evidence_pack(
+        self,
+        *,
+        limit: int = 5000,
+        tenant_id: str | None = None,
+        application_id: str | None = None,
+    ) -> dict:
+        return self.reporter.compliance_evidence_pack(
+            limit=limit,
+            tenant_id=tenant_id,
+            application_id=application_id,
+        )
+
+    def incident_dossier(
+        self,
+        incident_id: str,
+        *,
+        tenant_id: str | None = None,
+        application_id: str | None = None,
+    ) -> dict:
+        return self.reporter.incident_dossier(
+            incident_id,
+            tenant_id=tenant_id,
+            application_id=application_id,
+        )
+
+    def incident_report(
+        self,
+        incident_id: str,
+        *,
+        tenant_id: str | None = None,
+        application_id: str | None = None,
+    ) -> dict:
+        return self.reporter.incident_report(
+            incident_id,
+            tenant_id=tenant_id,
+            application_id=application_id,
+        )
 
     def local_threat_feed(self, limit: int = 5000) -> dict:
         return self.threat_intel.local_feed(limit=limit)
@@ -469,6 +649,14 @@ class CanariClient:
 
     def attack_pattern_library(self, *, local_limit: int = 5000) -> dict:
         return self.threat_intel.attack_pattern_library(local_limit=local_limit)
+
+    def ingest_external_siem_events(self, events: list[dict], *, source: str = "siem") -> dict:
+        out = self.threat_intel.ingest_external_events(events, source=source)
+        self.registry.record_audit("ingest_external_siem_events", out)
+        return out
+
+    def external_events(self, *, limit: int = 200, offset: int = 0) -> list[dict]:
+        return self.registry.list_external_events(limit=limit, offset=offset)
 
     def audit_log(self, limit: int = 100, offset: int = 0) -> list[dict]:
         return self.registry.list_audit(limit=limit, offset=offset)

@@ -49,6 +49,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_apply_ret = sub.add_parser("apply-retention", help="Apply persisted retention policy now")
     p_apply_ret.add_argument("--tenant", default=None)
     p_apply_ret.add_argument("--app", default=None)
+    p_rp = sub.add_parser("retention-policy", help="Manage scoped retention policies")
+    p_rp_sub = p_rp.add_subparsers(dest="retention_cmd", required=True)
+    p_rp_sub.add_parser("list")
+    p_rp_apply = p_rp_sub.add_parser("apply")
+    p_rp_set = p_rp_sub.add_parser("set")
+    p_rp_set.add_argument("--retention-days", type=int, required=True)
+    p_rp_set.add_argument("--tenant", default=None)
+    p_rp_set.add_argument("--app", default=None)
     p_seed = sub.add_parser("seed", help="Generate and store canary tokens")
     p_seed.add_argument("--n", type=int, default=1)
     p_seed.add_argument("--types", default="api_key")
@@ -77,6 +85,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_report = sub.add_parser("incident-report", help="Show incident timeline report")
     p_report.add_argument("incident_id")
+    p_report.add_argument("--tenant", default=None)
+    p_report.add_argument("--app", default=None)
     p_dash = sub.add_parser("serve-dashboard", help="Serve local dashboard and API")
     p_dash.add_argument("--host", default="127.0.0.1")
     p_dash.add_argument("--port", type=int, default=8080)
@@ -136,6 +146,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_purge.add_argument("--app", default=None)
     p_backup = sub.add_parser("backup-db", help="Backup local Canari SQLite DB")
     p_backup.add_argument("--out", required=True)
+    p_cp_export = sub.add_parser("control-plane-export", help="Export control-plane settings bundle")
+    p_cp_export.add_argument("--out", required=True)
+    p_cp_import = sub.add_parser("control-plane-import", help="Import control-plane settings bundle")
+    p_cp_import.add_argument("--in", dest="in_path", required=True)
+    p_cp_import.add_argument("--source", default="control_plane_import")
+    p_cp_import.add_argument("--dry-run", action="store_true")
+    p_cp_validate = sub.add_parser("control-plane-validate", help="Validate control-plane settings bundle")
+    p_cp_validate.add_argument("--in", dest="in_path", required=True)
     p_scan = sub.add_parser("scan-text", help="Scan arbitrary text for canary leaks")
     p_scan.add_argument("--text", required=True)
     p_scan.add_argument("--conversation", default=None)
@@ -145,6 +163,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_siem.add_argument("--app", default=None)
     p_siem.add_argument("--out", default=None, help="Optional output path (.jsonl)")
     p_siem.add_argument("--format", choices=["json", "jsonl", "cef"], default="json")
+    p_ingest = sub.add_parser("siem-ingest", help="Ingest external SIEM events from JSON/JSONL file")
+    p_ingest.add_argument("--in", dest="in_path", required=True)
+    p_ingest.add_argument("--source", default="siem")
+    p_external = sub.add_parser("siem-external", help="List ingested external SIEM events")
+    p_external.add_argument("--limit", type=int, default=200)
+    p_external.add_argument("--offset", type=int, default=0)
+    p_evidence = sub.add_parser("evidence-pack", help="Build compliance evidence pack JSON")
+    p_evidence.add_argument("--limit", type=int, default=5000)
+    p_evidence.add_argument("--tenant", default=None)
+    p_evidence.add_argument("--app", default=None)
+    p_evidence.add_argument("--out", default=None)
+    p_dossier = sub.add_parser("incident-dossier", help="Build incident dossier JSON")
+    p_dossier.add_argument("--incident", required=True)
+    p_dossier.add_argument("--tenant", default=None)
+    p_dossier.add_argument("--app", default=None)
+    p_dossier.add_argument("--out", default=None)
 
     return parser
 
@@ -214,6 +248,24 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "apply-retention":
         print(encoder(honey.apply_retention_policy(tenant_id=args.tenant, application_id=args.app)))
         return 0
+    if args.cmd == "retention-policy":
+        if args.retention_cmd == "list":
+            print(encoder(honey.scoped_retention_policies()))
+            return 0
+        if args.retention_cmd == "set":
+            print(
+                encoder(
+                    honey.set_scoped_retention_policy(
+                        retention_days=args.retention_days,
+                        tenant_id=args.tenant,
+                        application_id=args.app,
+                    )
+                )
+            )
+            return 0
+        if args.retention_cmd == "apply":
+            print(encoder(honey.apply_scoped_retention_policies()))
+            return 0
     if args.cmd == "seed":
         token_types = [t.strip() for t in args.types.split(",") if t.strip()]
         tokens = honey.generate(
@@ -254,7 +306,15 @@ def main(argv: list[str] | None = None) -> int:
         print(encoder([i.__dict__ for i in incidents]))
         return 0
     if args.cmd == "incident-report":
-        print(encoder(honey.incident_report(args.incident_id)))
+        print(
+            encoder(
+                honey.incident_report(
+                    args.incident_id,
+                    tenant_id=args.tenant,
+                    application_id=args.app,
+                )
+            )
+        )
         return 0
     if args.cmd == "serve-dashboard":
         server = honey.create_dashboard_server(host=args.host, port=args.port, api_token=args.api_token)
@@ -412,6 +472,21 @@ def main(argv: list[str] | None = None) -> int:
         size = honey.backup_db(args.out)
         print(encoder({"path": args.out, "bytes": size}))
         return 0
+    if args.cmd == "control-plane-export":
+        payload = honey.export_control_plane_bundle()
+        out = Path(args.out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+        print(encoder({"written": True, "path": args.out}))
+        return 0
+    if args.cmd == "control-plane-import":
+        payload = json.loads(Path(args.in_path).read_text(encoding="utf-8"))
+        print(encoder(honey.import_control_plane_bundle(payload, source=args.source, dry_run=args.dry_run)))
+        return 0
+    if args.cmd == "control-plane-validate":
+        payload = json.loads(Path(args.in_path).read_text(encoding="utf-8"))
+        print(encoder(honey.validate_control_plane_bundle(payload)))
+        return 0
     if args.cmd == "scan-text":
         events = honey.scan_output(
             args.text,
@@ -442,6 +517,53 @@ def main(argv: list[str] | None = None) -> int:
             print("\n".join(rows))
         else:
             print(encoder(rows))
+        return 0
+    if args.cmd == "siem-ingest":
+        src = Path(args.in_path)
+        content = src.read_text(encoding="utf-8")
+        events: list[dict]
+        if src.suffix.lower() == ".jsonl":
+            events = [json.loads(line) for line in content.splitlines() if line.strip()]
+        else:
+            payload = json.loads(content)
+            if isinstance(payload, dict) and isinstance(payload.get("events"), list):
+                events = payload["events"]
+            elif isinstance(payload, list):
+                events = payload
+            else:
+                events = [payload]
+        print(encoder(honey.ingest_external_siem_events(events, source=args.source)))
+        return 0
+    if args.cmd == "siem-external":
+        print(encoder(honey.external_events(limit=args.limit, offset=args.offset)))
+        return 0
+    if args.cmd == "evidence-pack":
+        payload = honey.compliance_evidence_pack(
+            limit=args.limit,
+            tenant_id=args.tenant,
+            application_id=args.app,
+        )
+        if args.out:
+            out = Path(args.out)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+            print(encoder({"written": True, "path": args.out}))
+            return 0
+        print(encoder(payload))
+        return 0
+    if args.cmd == "incident-dossier":
+        payload = honey.incident_dossier(
+            args.incident,
+            tenant_id=args.tenant,
+            application_id=args.app,
+        )
+        if args.out:
+            out = Path(args.out)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+            print(encoder({"written": True, "path": args.out}))
+            return 0
+        print(encoder(payload))
         return 0
 
     print("unknown command", file=sys.stderr)

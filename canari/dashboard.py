@@ -189,6 +189,24 @@ def _make_handler(registry: CanaryRegistry, reporter: ForensicReporter, api_toke
                     )
                 rows.sort(key=lambda r: r["last_seen"], reverse=True)
                 return self._send_json(rows[:limit])
+            if parsed.path == "/api/evidence-pack":
+                limit = _as_int(qs.get("limit", ["5000"])[0], 5000)
+                payload = reporter.compliance_evidence_pack(
+                    limit=limit,
+                    tenant_id=_first(qs, "tenant"),
+                    application_id=_first(qs, "app"),
+                )
+                return self._send_json(payload)
+            if parsed.path == "/api/incident-dossier":
+                incident_id = _first(qs, "incident")
+                if not incident_id:
+                    return self._send_json({"ok": False, "error": "incident is required"}, status=400)
+                payload = reporter.incident_dossier(
+                    incident_id,
+                    tenant_id=_first(qs, "tenant"),
+                    application_id=_first(qs, "app"),
+                )
+                return self._send_json(payload)
 
             self.send_response(404)
             self.end_headers()

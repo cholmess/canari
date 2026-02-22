@@ -48,6 +48,17 @@ def test_dashboard_server_endpoints(tmp_path):
         with urlopen(f"http://{host}:{port}/api/incidents?limit=10&tenant=acme&app=dash-app") as r:
             incidents = json.loads(r.read().decode("utf-8"))
         assert len(incidents) == 1
+        inc_id = incidents[0]["incident_id"]
+
+        with urlopen(f"http://{host}:{port}/api/evidence-pack?limit=100&tenant=acme&app=dash-app") as r:
+            evidence = json.loads(r.read().decode("utf-8"))
+        assert evidence["evidence_version"] == "v1"
+
+        with urlopen(
+            f"http://{host}:{port}/api/incident-dossier?incident={inc_id}&tenant=acme&app=dash-app"
+        ) as r:
+            dossier = json.loads(r.read().decode("utf-8"))
+        assert dossier["found"] is True
 
         with urlopen(f"http://{host}:{port}/") as r:
             html = r.read().decode("utf-8")

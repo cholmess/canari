@@ -135,7 +135,52 @@ class ThreatIntelBuilder:
         patterns.sort(key=lambda p: p["observations"], reverse=True)
         return {"patterns": patterns, "pattern_count": len(patterns)}
 
+    def ingest_external_events(self, events: list[dict], *, source: str = "siem") -> dict:
+        normalized_signatures = []
+        stored = 0
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            event_type = event.get("event_type") or event.get("type")
+            severity = event.get("severity")
+            tenant_id = event.get("tenant_id")
+            application_id = event.get("application_id")
+            self.registry.record_external_event(
+                source=source,
+                payload=event,
+                event_type=event_type,
+                severity=severity,
+                tenant_id=tenant_id,
+                application_id=application_id,
+            )
+            stored += 1
+            sig = self._external_sig(event)
+            normalized_signatures.append(
+                {
+                    "signature": sig,
+                    "count": 1,
+                    "token_type": event.get("token_type"),
+                    "surface": event.get("detection_surface"),
+                    "severity": severity,
+                }
+            )
+        imported = self.registry.upsert_network_signatures(normalized_signatures, source=f"{source}_ingest")
+        return {"stored_events": stored, "imported_signatures": imported, "source": source}
+
     @staticmethod
     def _sig(alert) -> str:
         raw = f"{alert.token_type.value}|{alert.detection_surface}|{alert.severity.value}|{(alert.output_snippet or '')[:120]}"
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+    @staticmethod
+    def _external_sig(event: dict) -> str:
+        raw = "|".join(
+            [
+                str(event.get("token_type", "")),
+                str(event.get("detection_surface", "")),
+                str(event.get("severity", "")),
+                str(event.get("event_type", event.get("type", ""))),
+                str(event.get("snippet", event.get("output_snippet", "")))[:120],
+            ]
+        )
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]

@@ -18,6 +18,13 @@ def test_fastapi_reader_forbidden_on_admin_endpoints(tmp_path):
 
     assert client.get("/v1/audit", headers={"X-API-Key": "reader-key"}).status_code == 403
     assert client.get("/v1/threat-feed", headers={"X-API-Key": "reader-key"}).status_code == 403
+    assert client.get("/v1/siem/external", headers={"X-API-Key": "reader-key"}).status_code == 403
+    assert client.post("/v1/siem/ingest", headers={"X-API-Key": "reader-key"}, json={"events": []}).status_code == 403
+    assert client.get("/v1/control-plane/export", headers={"X-API-Key": "reader-key"}).status_code == 403
+    assert client.post("/v1/control-plane/import", headers={"X-API-Key": "reader-key"}, json={}).status_code == 403
+    assert client.post("/v1/control-plane/validate", headers={"X-API-Key": "reader-key"}, json={}).status_code == 403
+    assert client.get("/v1/compliance/evidence", headers={"X-API-Key": "reader-key"}).status_code == 403
+    assert client.get("/v1/compliance/incidents/inc-1", headers={"X-API-Key": "reader-key"}).status_code == 403
 
 
 def test_fastapi_tenant_scope_for_reader(tmp_path):

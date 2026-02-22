@@ -28,5 +28,9 @@
 - API security: static key or persisted API-key auth from local registry.
 - RBAC: `reader` vs `admin` roles, with tenant-scoped readers in API layer.
 - API key scopes: optional `tenant_id` and `application_id` constraints are enforced at query layer.
+- SIEM integration: outbound normalized/CEF exports and inbound external-event ingestion with local journaling.
+- compliance controls: scoped retention policy profiles per tenant/application.
+- control-plane portability: export/import bundle for settings, retention profiles, and signature catalog.
+- compliance reporting: evidence pack aggregation with controls, operations, and SIEM samples.
 - key ops: persisted key rotation and usage tracking (`last_used_at`).
 - API operations: admin-only endpoints for key lifecycle management.

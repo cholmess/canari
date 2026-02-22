@@ -30,6 +30,7 @@ def test_fastapi_health_and_protected_endpoints(tmp_path):
     r = client.get("/v1/alerts?limit=10", headers={"X-API-Key": "secret"})
     assert r.status_code == 200
     assert len(r.json()) == 1
+    incident_id = r.json()[0]["incident_id"]
 
     r = client.get("/v1/alert-stats", headers={"X-API-Key": "secret"})
     assert r.status_code == 200
@@ -38,6 +39,10 @@ def test_fastapi_health_and_protected_endpoints(tmp_path):
     r = client.get("/v1/threat-feed", headers={"X-API-Key": "secret"})
     assert r.status_code == 200
     assert r.json()["events_analyzed"] >= 1
+
+    r = client.get(f"/v1/incidents/{incident_id}", headers={"X-API-Key": "secret"})
+    assert r.status_code == 200
+    assert r.json()["found"] is True
 
     r = client.post("/v1/threat-sharing", headers={"X-API-Key": "secret"}, json={"opt_in_enabled": True})
     assert r.status_code == 200
