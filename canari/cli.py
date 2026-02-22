@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 
 from canari import init
 
@@ -9,6 +10,7 @@ from canari import init
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="canari")
     parser.add_argument("--db", default="canari.db", help="Path to canari SQLite DB")
+    parser.add_argument("--compact", action="store_true", help="Emit compact JSON without pretty indentation")
 
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -56,17 +58,21 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     honey = init(db_path=args.db)
     honey.alerter._channels = []
+    if args.compact:
+        encoder = lambda obj: json.dumps(obj, default=str)
+    else:
+        encoder = lambda obj: json.dumps(obj, indent=2, default=str)
 
     if args.cmd == "token-stats":
-        print(json.dumps(honey.registry_stats(), indent=2, default=str))
+        print(encoder(honey.registry_stats()))
         return 0
     if args.cmd == "alert-stats":
-        print(json.dumps(honey.alert_stats(), indent=2, default=str))
+        print(encoder(honey.alert_stats()))
         return 0
     if args.cmd == "seed":
         token_types = [t.strip() for t in args.types.split(",") if t.strip()]
         tokens = honey.generate(n_tokens=args.n, token_types=token_types)
-        print(json.dumps([t.model_dump(mode="json") for t in tokens], indent=2, default=str))
+        print(encoder([t.model_dump(mode="json") for t in tokens]))
         return 0
     if args.cmd == "alerts":
         alerts = honey.alert_history(
@@ -76,17 +82,17 @@ def main(argv: list[str] | None = None) -> int:
             conversation_id=args.conversation,
             incident_id=args.incident,
         )
-        print(json.dumps([a.model_dump(mode="json") for a in alerts], indent=2, default=str))
+        print(encoder([a.model_dump(mode="json") for a in alerts]))
         return 0
     if args.cmd == "incidents":
         incidents = honey.recent_incidents(limit=args.limit)
-        print(json.dumps([i.__dict__ for i in incidents], indent=2, default=str))
+        print(encoder([i.__dict__ for i in incidents]))
         return 0
     if args.cmd == "incident-report":
-        print(json.dumps(honey.incident_report(args.incident_id), indent=2, default=str))
+        print(encoder(honey.incident_report(args.incident_id)))
         return 0
     if args.cmd == "forensic-summary":
-        print(json.dumps(honey.forensic_summary(limit=args.limit), indent=2, default=str))
+        print(encoder(honey.forensic_summary(limit=args.limit)))
         return 0
     if args.cmd == "export":
         if args.format == "jsonl":
@@ -107,19 +113,19 @@ def main(argv: list[str] | None = None) -> int:
                 conversation_id=args.conversation,
                 incident_id=args.incident,
             )
-        print(json.dumps({"exported": n, "path": args.out, "format": args.format}))
+        print(encoder({"exported": n, "path": args.out, "format": args.format}))
         return 0
     if args.cmd == "purge-alerts":
         removed = honey.purge_alerts_older_than(days=args.older_than_days)
-        print(json.dumps({"removed": removed, "older_than_days": args.older_than_days}))
+        print(encoder({"removed": removed, "older_than_days": args.older_than_days}))
         return 0
     if args.cmd == "scan-text":
         events = honey.scan_output(
             args.text,
             context={"conversation_id": args.conversation} if args.conversation else None,
         )
-        print(json.dumps([e.model_dump(mode="json") for e in events], indent=2, default=str))
+        print(encoder([e.model_dump(mode="json") for e in events]))
         return 0
 
-    parser.error("unknown command")
+    print("unknown command", file=sys.stderr)
     return 2

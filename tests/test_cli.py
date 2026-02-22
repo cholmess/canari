@@ -73,3 +73,17 @@ def test_cli_seed_and_scan_text(tmp_path, capsys):
     events = json.loads(out)
     assert len(events) == 1
     assert events[0]["conversation_id"] == "conv-cli-scan"
+
+
+def test_cli_compact_output(tmp_path, capsys):
+    db = tmp_path / "canari.db"
+    honey = canari.init(db_path=str(db))
+    honey.alerter._channels = []
+    honey.generate(n_tokens=1, token_types=["api_key"])
+
+    rc = main(["--db", str(db), "--compact", "token-stats"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert "\n" not in out
+    payload = json.loads(out)
+    assert payload["total_tokens"] == 1

@@ -175,6 +175,7 @@ CLI usage:
 
 ```bash
 canari --db canari.db token-stats
+canari --db canari.db --compact token-stats
 canari --db canari.db alert-stats
 canari --db canari.db seed --n 5 --types api_key,email,stripe_key
 canari --db canari.db alerts --limit 20 --severity critical
