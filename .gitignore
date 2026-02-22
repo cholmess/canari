@@ -4,3 +4,5 @@ __pycache__/
 .pytest_cache/
 canari.db
 *.egg-info/
+CANARI_FIX_PLAN.md
+examples/attack_demo/.env

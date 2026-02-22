@@ -1,8 +1,42 @@
 # Canari
 
-Your LLM was just attacked. Canari knew before you did.
+Honeypot tokens for LLM and RAG applications.
 
-Canari is an intrusion-detection library for LLM apps. It injects synthetic decoy tokens into context and emits high-signal alerts when those tokens appear in model outputs.
+Prompt injection is the #1 vulnerability in LLM applications (OWASP LLM Top 10).
+An attacker can exfiltrate your entire RAG context through a chat interface and
+your firewall will never flag a single packet, because the exfiltration looks
+exactly like a legitimate API response. You find out weeks later, if ever.
+
+Canari injects synthetic decoy tokens into your LLM context. When an attacker
+successfully extracts them, you know immediately with zero false positives,
+because the token exists nowhere legitimate.
+
+Canary tokens have protected traditional infrastructure for years. Canari brings
+the same principle to LLM applications: put something fake in the place attackers
+target, instrument it, and alert on contact. If it fires, it's a breach.
+
+## Demo
+
+Render and add the GIF from `examples/attack_demo/attack_demo.tape`:
+
+```bash
+vhs examples/attack_demo/attack_demo.tape
+```
+
+Expected output center-frame:
+
+```text
+CANARI ALERT - CANARY FIRED
+Severity: HIGH
+Token type: stripe_key
+This is a confirmed prompt injection attack.
+```
+
+## Install
+
+```bash
+pip install canari
+```
 
 ## 60-second quickstart
 
@@ -17,290 +51,75 @@ system_prompt = honey.inject_system_prompt(
     canaries=canaries,
 )
 
-response = "Internal key: sk_test_CANARI_abcd1234"  # sample LLM output
+response = "Internal key: sk_test_CANARI_abcd1234"
 alerts = honey.scan_output(response, context={"conversation_id": "conv-1"})
-print(alerts)
+print(len(alerts))
 ```
 
-## What this package includes
+## Run the attack demo
 
-- Token generation for common sensitive formats
-- SQLite-backed local canary registry
-- Injection helpers for system prompt and context wrappers
-- Aho-Corasick output scanning for deterministic matching
-- Alert dispatch to webhook, Slack, stdout, file, or callback
-- Integration wrappers for OpenAI-style callables, Runnable `.invoke()/batch()`, chain `.invoke()`, and query-engine `.query()`
-- Outbound HTTP egress monitoring for canary token exfiltration attempts
-- Deterministic exfiltration-pattern assessment (`low`/`medium`/`high`/`critical`)
-- Registry exposure stats (`total/active/by_type/by_strategy`)
-- Conversation-level correlation (`incident_id`, `correlation_count`) for repeated/multi-surface attacks
-- Local alert journal in SQLite (`alert_history`, `alert_stats`)
-- Forensic reporting (`forensic_summary`, `incident_report`)
-- Export helpers (`export_alerts_jsonl`, `export_alerts_csv`)
-- Built-in CLI (`canari` or `python -m canari`)
-- Alert journal retention (`purge_alerts_older_than`)
-- Optional alert dispatch rate limiting (`set_alert_rate_limit`)
-- Local dashboard server (`serve-dashboard`)
-- Local threat-intel feed (`threat-feed`)
-- Opt-in threat-sharing controls (`threat-share`)
-- Shared signature import + local/network matching (`threat-import`, `network-signatures`, `threat-matches`)
-- Transparency report and attack-pattern library (`threat-transparency`, `attack-patterns`)
-- Webhook integrity signing (`signing_secret` -> `X-Canari-Signature`)
-- Default tenant context (`set_default_tenant`) for multi-tenant apps
-- Default application context (`set_default_application`) for multi-app deployments
-- Scoped canary generation by tenant/app (`seed --tenant/--app`)
-- Administrative audit log (`audit-log`)
-- FastAPI backend option (`serve-api`)
-- Persisted API key management (`api-keys add/list/revoke`)
-- API key scoping by tenant and application (`tenant_id`, `application_id`)
-- API key rotation (`api-keys rotate`) and `last_used_at` tracking
-- FastAPI admin endpoints for API key management (`/v1/api-keys*`)
-- Persisted retention policy (`policy set --retention-days`, `apply-retention`)
-- Scoped retention policy profiles (`retention-policy set/list/apply`)
-- SIEM-oriented normalized event export (`siem-export`, `/v1/siem/events`)
-- CEF export for SIEM connectors (`siem-export --format cef`, `/v1/siem/cef`)
-- SIEM inbound ingestion (`siem-ingest`, `/v1/siem/ingest`, `/v1/siem/external`)
-- Control-plane bundle export/import (`control-plane-export/import`, `/v1/control-plane/*`)
-- Compliance evidence pack export (`evidence-pack`, `/v1/compliance/evidence`)
-- Incident dossier export for investigations (`incident-dossier`, `/v1/compliance/incidents/{incident_id}`)
-- Scoped alert-stat snapshots (`alert-stats --tenant/--app`, `/v1/alert-stats`)
+```bash
+cd examples/attack_demo
+cp .env.example .env
+# set OPENAI_API_KEY in .env
+pip install -r requirements.txt
+python app.py
+```
+
+## How it works
+
+Canari generates deterministic fake secrets that look real enough to be attractive targets for prompt injection attacks. You insert those decoys into system prompts, hidden context appendices, or document-style RAG content while keeping a local registry of what was planted and where.
+
+When a model response is produced, Canari scans output with exact token matching and deterministic fallback paths. Any hit is definitive because each canary was synthetically created by your deployment and does not belong in legitimate output.
+
+Every hit becomes a structured alert event with severity, context, and timeline attributes. You can dispatch immediately to stdout, webhooks, and Slack, then query incidents and forensic summaries from local SQLite without shipping your data to an external service.
 
 ## Integration patterns
 
 ```python
-# OpenAI-style callable
 safe_create = honey.wrap_llm_call(client.chat.completions.create)
 resp = safe_create(model="gpt-4o-mini", messages=[...])
 ```
 
 ```python
-# OpenAI SDK client patching
 honey.patch_openai_client(client)
 resp = client.chat.completions.create(model="gpt-4o-mini", messages=[...])
 ```
 
 ```python
-# Runnable-style object (LangChain core)
-safe_runnable = honey.wrap_runnable(runnable)
-result = safe_runnable.invoke({"query": "..."})
-```
-
-```python
-# LangChain-like chain
 safe_chain = honey.wrap_chain(chain)
-result = safe_chain.invoke({"query": "..."})
-```
-
-```python
-# LlamaIndex-like query engine
+safe_runnable = honey.wrap_runnable(runnable)
 safe_qe = honey.wrap_query_engine(query_engine)
-response = safe_qe.query("...")
 ```
 
-```python
-# Outbound HTTP request monitoring
-honey.monitor_http_request(
-    "POST",
-    "https://api.example.com/submit",
-    headers={"Authorization": "Bearer ..."},
-    body={"payload": "..."},
-)
-```
+## Alert channels
 
-## Webhook payload shape
+- Webhook: signed payloads with `X-Canari-Signature` support.
+- Slack: push concise incident notifications.
+- Stdout/file/callback: local ops-friendly alert sinks.
 
-Webhook/file JSON alerts follow this structure:
+More details: `docs/alert-channels.md`.
 
-```json
-{
-  "canari_version": "0.1.0",
-  "alert_id": "uuid",
-  "severity": "high",
-  "triggered_at": "2026-02-22T14:30:00Z",
-  "canary": {
-    "id": "canary-uuid",
-    "type": "stripe_key",
-    "value": "sk_test_CANARI_abc123",
-    "injected_at": "2026-02-22T09:00:00Z",
-    "injection_strategy": "document_metadata",
-    "injection_location": "RAG vector store document"
-  },
-  "trigger": {
-    "detection_surface": "output",
-    "output_snippet": "...",
-    "conversation_id": "conv-uuid",
-    "incident_id": "inc-conv-uuid-12345",
-    "correlation_count": 1,
-    "session_metadata": {}
-  },
-  "forensic_notes": "Token appeared in full in LLM output."
-}
-```
-
-## Install
+## CLI (Top 10)
 
 ```bash
-pip install -e .
-```
-
-Optional extras:
-
-```bash
-pip install -e .[openai]
-pip install -e .[langchain]
-pip install -e .[llamaindex]
-pip install -e .[speed]
-pip install -e .[api]
-```
-
-## Tests
-
-```bash
-pytest
-```
-
-Registry stats:
-
-```python
-stats = honey.registry_stats()
-print(stats["total_tokens"], stats["active_tokens"])
-```
-
-Recent incidents:
-
-```python
-incidents = honey.recent_incidents(limit=20)
-for i in incidents:
-    print(i.incident_id, i.max_severity, i.event_count)
-```
-
-Alert journal:
-
-```python
-alerts = honey.alert_history(limit=25, severity="critical")
-stats = honey.alert_stats()
-print(len(alerts), stats["total_alerts"])
-print(stats["by_token_type"], stats["top_conversations"])
-print(stats["by_tenant"])
-```
-
-Rate limit dispatch noise:
-
-```python
-honey.set_alert_rate_limit(window_seconds=60, max_dispatches=3)
-# ...
-honey.disable_alert_rate_limit()
-```
-
-Default tenant context:
-
-```python
-honey.set_default_tenant("acme-prod")
-# alerts generated without explicit tenant_id inherit this tenant
-honey.clear_default_tenant()
-```
-
-Forensic reports:
-
-```python
-summary = honey.forensic_summary(limit=1000)
-incident = honey.incident_report("inc-conv-123-456")
-print(summary["alerts"]["total_alerts"], incident["found"])
-```
-
-Export alerts:
-
-```python
-honey.export_alerts_jsonl("/tmp/canari-alerts.jsonl", severity="critical")
-honey.export_alerts_csv("/tmp/canari-alerts.csv", detection_surface="network_egress")
-```
-
-Signed webhooks:
-
-```python
-honey.alerter.add_webhook(
-    "https://example.com/canari",
-    signing_secret="replace-with-strong-secret",
-)
-```
-
-Receiver-side verification:
-
-```python
-is_valid = canari.AlertDispatcher.verify_signature(payload, headers, "replace-with-strong-secret")
-```
-
-CLI usage:
-
-```bash
+canari --db canari.db seed --n 5 --types api_key,email,credit_card
 canari --db canari.db token-stats
-canari --db canari.db --compact token-stats
-canari --db canari.db alert-stats
-canari --db canari.db alert-stats --tenant acme-prod --app support-assistant
-canari --db canari.db alerter-health
-canari --db canari.db audit-log --limit 50 --offset 0
-canari --db canari.db api-keys add --name ops --key supersecret --role admin
-canari --db canari.db api-keys add --name tenant-reader --key tenantsecret --role reader --tenant acme-prod
-canari --db canari.db api-keys add --name app-reader --key appsecret --role reader --app support-assistant
-canari --db canari.db api-keys list
-canari --db canari.db api-keys revoke --id 1
-canari --db canari.db api-keys rotate --id 2 --new-key brandnewsecret
-canari --db canari.db doctor
-canari --db canari.db policy show
-canari --db canari.db policy set --min-severity high --rate-window 120 --rate-max 4 --retention-days 30
-canari --db canari.db apply-retention
-canari --db canari.db apply-retention --app support-assistant
-canari --db canari.db retention-policy set --retention-days 14 --tenant acme-prod --app support-assistant
-canari --db canari.db retention-policy list
-canari --db canari.db retention-policy apply
-canari --db canari.db seed --n 5 --types api_key,email,stripe_key
-canari --db canari.db seed --n 3 --types api_key --tenant acme-prod --app support-assistant
-canari --db canari.db rotate-canaries --n 5 --types api_key,email
-canari --db canari.db alerts --limit 20 --severity critical
-canari --db canari.db alerts --limit 20 --offset 20
-canari --db canari.db alerts --incident inc-conv-123-456
-canari --db canari.db alerts --tenant acme-prod --limit 50
-canari --db canari.db alerts --app support-assistant --limit 50
-canari --db canari.db alerts --since 2026-02-01T00:00:00+00:00 --until 2026-02-28T23:59:59+00:00
+canari --db canari.db alerts --limit 20
+canari --db canari.db alerts --severity critical
 canari --db canari.db incidents --limit 20
-canari --db canari.db incident-report inc-conv-123-456 --app support-assistant
-canari --db canari.db forensic-summary --limit 5000
-canari --db canari.db threat-feed --limit 5000
-canari --db canari.db threat-share show
-canari --db canari.db threat-share enable
-canari --db canari.db threat-import --in /tmp/share-bundle.json --source community
-canari --db canari.db network-signatures --limit 100 --offset 0
-canari --db canari.db threat-matches --local-limit 5000 --network-limit 5000
-canari --db canari.db threat-transparency --local-limit 5000 --network-limit 5000
-canari --db canari.db attack-patterns --local-limit 5000
-canari --db canari.db threat-transparency --local-limit 5000 --network-limit 5000 --out /tmp/canari-transparency.json
-canari --db canari.db attack-patterns --local-limit 5000 --out /tmp/canari-attack-patterns.json
-canari --db canari.db incident-replay --incident inc-conv-123-456 --out /tmp/incident.jsonl
-canari --db canari.db siem-export --limit 1000 --out /tmp/canari-siem.jsonl
-canari --db canari.db siem-export --limit 1000 --app support-assistant --out /tmp/canari-siem-app.jsonl
-canari --db canari.db siem-export --limit 1000 --format cef --out /tmp/canari-siem.cef
-canari --db canari.db siem-ingest --in /tmp/external-events.json --source splunk
-canari --db canari.db siem-external --limit 200 --offset 0
-canari --db canari.db scan-text --text "leak sk_test_CANARI_x" --conversation conv-1
-canari --db canari.db export --format jsonl --out /tmp/canari-alerts.jsonl
-canari --db canari.db export --format csv --out /tmp/canari-alerts.csv --since 2026-02-01T00:00:00+00:00
-canari --db canari.db export --format jsonl --out /tmp/canari-alerts-app.jsonl --app support-assistant
-canari --db canari.db export --format jsonl --out /tmp/canari-redacted.jsonl --redact
-canari --db canari.db purge-alerts --older-than-days 30
-canari --db canari.db purge-alerts --older-than-days 30 --tenant acme-prod --app support-assistant
-canari --db canari.db backup-db --out /tmp/canari-backup.db
-canari --db canari.db control-plane-export --out /tmp/canari-control-plane.json
-canari --db canari.db control-plane-validate --in /tmp/canari-control-plane.json
-canari --db canari.db control-plane-import --in /tmp/canari-control-plane.json --source migration
-canari --db canari.db control-plane-import --in /tmp/canari-control-plane.json --dry-run
-canari --db canari.db evidence-pack --limit 5000 --app support-assistant --out /tmp/canari-evidence.json
-canari --db canari.db incident-dossier --incident inc-conv-123-456 --app support-assistant --out /tmp/canari-incident-dossier.json
+canari --db canari.db incident-report inc-conv-123-456
+canari --db canari.db scan-text --text "leak sk_test_CANARI_x"
+canari --db canari.db forensic-summary
+canari --db canari.db rotate-canaries --n 5
 canari --db canari.db serve-dashboard --host 127.0.0.1 --port 8080
-canari --db canari.db serve-dashboard --host 127.0.0.1 --port 8080 --api-token secret123
-canari --db canari.db serve-api --host 127.0.0.1 --port 8000 --api-key secret123
 ```
 
-## CI and release checks
+## Advanced features
 
-- CI test workflow: `.github/workflows/ci.yml`
-- Build + twine validation workflow: `.github/workflows/release-check.yml`
+- Full CLI: `docs/cli-reference.md`
+- Enterprise controls: `docs/enterprise.md`
+- Threat intel: `docs/threat-intelligence.md`
+- Integration deep dive: `docs/integration-guide.md`
+- Token generation details: `docs/token-types.md`
+- Show HN launch draft: `docs/show-hn.md`
