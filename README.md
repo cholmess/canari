@@ -17,6 +17,8 @@ target, instrument it, and alert on contact. If it fires, it's a breach.
 
 ## Demo
 
+![Canari attack demo](docs/assets/attack-demo.gif)
+
 Render and add the GIF from `examples/attack_demo/attack_demo.tape`:
 
 ```bash
@@ -60,10 +62,8 @@ print(len(alerts))
 
 ```bash
 cd examples/attack_demo
-cp .env.example .env
-# set OPENAI_API_KEY in .env
 pip install -r requirements.txt
-python app.py
+python app.py --offline
 ```
 
 ## How it works
