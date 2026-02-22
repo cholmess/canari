@@ -27,7 +27,7 @@ Date: 2026-02-22
 ## Pending external/runtime tasks
 
 - [ ] Build package artifacts (`python -m build`) once `build` module is installed.
-- [ ] Publish to TestPyPI and PyPI (`twine upload ...`) from a network-enabled environment.
+- [ ] Publish to PyPI (`twine upload ...`) from a network-enabled environment.
 - [ ] Render demo GIF from `examples/attack_demo/attack_demo.tape` once `vhs` is installed.
 - [ ] Validate attack demo end-to-end with a real `OPENAI_API_KEY`.
 - [ ] Fill `.pypirc` credentials (template in `.pypirc.example`).
@@ -40,7 +40,6 @@ cp .pypirc.example .pypirc
 
 python -m pip install build
 python -m build
-twine upload --config-file .pypirc --repository testpypi dist/*
 twine upload --config-file .pypirc --repository pypi dist/*
 
 # GIF
