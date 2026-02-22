@@ -85,6 +85,9 @@ class CanariClient:
             self.alerter.dispatch(event)
         return events
 
+    def registry_stats(self) -> dict:
+        return self.registry.stats()
+
     @staticmethod
     def _context_from_llm_call(args, kwargs) -> dict:
         context: dict = {}

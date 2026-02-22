@@ -30,6 +30,8 @@ print(alerts)
 - Aho-Corasick output scanning for deterministic matching
 - Alert dispatch to webhook, Slack, stdout, file, or callback
 - Integration wrappers for OpenAI-style callables, Runnable `.invoke()/batch()`, chain `.invoke()`, and query-engine `.query()`
+- Deterministic exfiltration-pattern assessment (`low`/`medium`/`high`/`critical`)
+- Registry exposure stats (`total/active/by_type/by_strategy`)
 
 ## Integration patterns
 
@@ -108,6 +110,13 @@ pip install -e .[llamaindex]
 
 ```bash
 pytest
+```
+
+Registry stats:
+
+```python
+stats = honey.registry_stats()
+print(stats["total_tokens"], stats["active_tokens"])
 ```
 
 ## CI and release checks

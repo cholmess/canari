@@ -88,6 +88,26 @@ class CanaryRegistry:
             )
             return cur.rowcount > 0
 
+    def stats(self) -> dict:
+        with self._connect() as conn:
+            total = conn.execute("SELECT COUNT(*) AS c FROM canary_tokens").fetchone()["c"]
+            active = conn.execute(
+                "SELECT COUNT(*) AS c FROM canary_tokens WHERE active = 1"
+            ).fetchone()["c"]
+            by_type_rows = conn.execute(
+                "SELECT token_type, COUNT(*) AS c FROM canary_tokens GROUP BY token_type"
+            ).fetchall()
+            by_strategy_rows = conn.execute(
+                "SELECT injection_strategy, COUNT(*) AS c FROM canary_tokens GROUP BY injection_strategy"
+            ).fetchall()
+        return {
+            "total_tokens": total,
+            "active_tokens": active,
+            "inactive_tokens": total - active,
+            "by_type": {row["token_type"]: row["c"] for row in by_type_rows},
+            "by_strategy": {row["injection_strategy"]: row["c"] for row in by_strategy_rows},
+        }
+
     @staticmethod
     def _row_to_token(row: sqlite3.Row) -> CanaryToken:
         return CanaryToken(

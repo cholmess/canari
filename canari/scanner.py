@@ -10,6 +10,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover
     ahocorasick = None
 
+from canari.detection import ExfiltrationAnalyzer
 from canari.models import AlertEvent, AlertSeverity, CanaryToken, TokenType
 from canari.registry import CanaryRegistry
 
@@ -19,6 +20,7 @@ class OutputScanner:
         self.registry = registry
         self._token_index: dict[str, CanaryToken] = {}
         self._automaton = None
+        self.analyzer = ExfiltrationAnalyzer()
         self._rebuild_index()
 
     def _rebuild_index(self) -> None:
@@ -34,11 +36,8 @@ class OutputScanner:
             self._automaton.make_automaton()
 
     def _severity_for(self, token: CanaryToken, hit_count: int) -> AlertSeverity:
-        if token.token_type in {TokenType.AWS_KEY, TokenType.STRIPE_KEY, TokenType.GITHUB_TOKEN}:
-            return AlertSeverity.HIGH
-        if hit_count > 1:
-            return AlertSeverity.MEDIUM
-        return AlertSeverity.LOW
+        assessment = self.analyzer.assess(token, "", hit_count)
+        return assessment.severity
 
     def scan(self, output: str, context: dict | None = None) -> list[AlertEvent]:
         context = context or {}
@@ -58,11 +57,15 @@ class OutputScanner:
                     seen.add(value)
 
         events: list[AlertEvent] = []
+        scan_time = datetime.now(timezone.utc)
         for token in hits:
             idx = output.find(token.value)
             snippet_start = max(0, idx - 60)
             snippet_end = min(len(output), idx + len(token.value) + 60)
             snippet = output[snippet_start:snippet_end]
+            assessment = self.analyzer.assess(token, output, len(hits))
+            delta = scan_time - token.injection_timestamp.astimezone(timezone.utc)
+            interval = str(delta).split(".", maxsplit=1)[0]
             events.append(
                 AlertEvent(
                     id=str(uuid.uuid4()),
@@ -72,15 +75,16 @@ class OutputScanner:
                     injection_strategy=token.injection_strategy,
                     injection_location=token.injection_location,
                     injected_at=token.injection_timestamp,
-                    severity=self._severity_for(token, len(hits)),
-                    triggered_at=datetime.now(timezone.utc),
+                    severity=assessment.severity,
+                    triggered_at=scan_time,
                     conversation_id=context.get("conversation_id"),
                     output_snippet=snippet,
                     full_output=output,
                     session_metadata=context.get("session_metadata", {}),
                     forensic_notes=(
                         "Token appeared in LLM output. Deterministic canary match "
-                        f"for strategy={token.injection_strategy.value}."
+                        f"for strategy={token.injection_strategy.value}. "
+                        f"Assessment={assessment.reason}. Injection-to-trigger interval={interval}."
                     ),
                 )
             )
