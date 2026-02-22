@@ -35,6 +35,8 @@ class AlertDispatcher:
                 "detection_surface": event.detection_surface,
                 "output_snippet": event.output_snippet,
                 "conversation_id": event.conversation_id,
+                "incident_id": event.incident_id,
+                "correlation_count": event.correlation_count,
                 "session_metadata": event.session_metadata,
             },
             "forensic_notes": event.forensic_notes,

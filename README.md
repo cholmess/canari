@@ -33,6 +33,7 @@ print(alerts)
 - Outbound HTTP egress monitoring for canary token exfiltration attempts
 - Deterministic exfiltration-pattern assessment (`low`/`medium`/`high`/`critical`)
 - Registry exposure stats (`total/active/by_type/by_strategy`)
+- Conversation-level correlation (`incident_id`, `correlation_count`) for repeated/multi-surface attacks
 
 ## Integration patterns
 
@@ -98,6 +99,8 @@ Webhook/file JSON alerts follow this structure:
     "detection_surface": "output",
     "output_snippet": "...",
     "conversation_id": "conv-uuid",
+    "incident_id": "inc-conv-uuid-12345",
+    "correlation_count": 1,
     "session_metadata": {}
   },
   "forensic_notes": "Token appeared in full in LLM output."
@@ -129,6 +132,14 @@ Registry stats:
 ```python
 stats = honey.registry_stats()
 print(stats["total_tokens"], stats["active_tokens"])
+```
+
+Recent incidents:
+
+```python
+incidents = honey.recent_incidents(limit=20)
+for i in incidents:
+    print(i.incident_id, i.max_severity, i.event_count)
 ```
 
 ## CI and release checks

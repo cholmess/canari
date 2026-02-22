@@ -3,6 +3,7 @@ import asyncio
 from canari.adapters import patch_openai_client, wrap_runnable
 from canari.alerter import AlertDispatcher
 from canari.generator import CanaryGenerator
+from canari.incidents import IncidentManager
 from canari.integrations import inject_canaries_into_index, wrap_chain, wrap_query_engine
 from canari.injector import inject_as_document, inject_into_system_prompt, wrap_context_assembler
 from canari.monitor import EgressMonitor
@@ -19,6 +20,7 @@ class CanariClient:
         self.generator = CanaryGenerator()
         self.scanner = OutputScanner(self.registry)
         self.egress_monitor = EgressMonitor(self.registry)
+        self.incidents = IncidentManager()
         self.alerter = AlertDispatcher(canari_version=__version__)
         self.alerter.add_stdout()
 
@@ -83,9 +85,12 @@ class CanariClient:
 
     def scan_output(self, output: str, context: dict | None = None) -> list[AlertEvent]:
         events = self.scanner.scan(output, context=context)
+        correlated_events = []
         for event in events:
-            self.alerter.dispatch(event)
-        return events
+            correlated = self.incidents.correlate(event)
+            correlated_events.append(correlated)
+            self.alerter.dispatch(correlated)
+        return correlated_events
 
     def monitor_http_request(
         self,
@@ -103,9 +108,12 @@ class CanariClient:
             body=body,
             context=context,
         )
+        correlated_events = []
         for event in events:
-            self.alerter.dispatch(event)
-        return events
+            correlated = self.incidents.correlate(event)
+            correlated_events.append(correlated)
+            self.alerter.dispatch(correlated)
+        return correlated_events
 
     def wrap_httpx_client(self, client):
         if not hasattr(client, "request"):
@@ -123,6 +131,9 @@ class CanariClient:
 
     def registry_stats(self) -> dict:
         return self.registry.stats()
+
+    def recent_incidents(self, limit: int = 50):
+        return self.incidents.recent_incidents(limit=limit)
 
     @staticmethod
     def _context_from_llm_call(args, kwargs) -> dict:
@@ -162,6 +173,7 @@ __all__ = [
     "CanaryGenerator",
     "CanaryRegistry",
     "CanaryToken",
+    "IncidentManager",
     "InjectionStrategy",
     "OutputScanner",
     "TokenType",

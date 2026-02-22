@@ -62,3 +62,5 @@ class AlertEvent(BaseModel):
     session_metadata: dict[str, Any] = Field(default_factory=dict)
     forensic_notes: str = ""
     detection_surface: str = "output"
+    incident_id: str | None = None
+    correlation_count: int = 1

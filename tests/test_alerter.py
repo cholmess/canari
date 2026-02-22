@@ -28,6 +28,8 @@ def test_build_payload_shape():
     assert payload["canary"]["id"] == "canary-1"
     assert payload["trigger"]["conversation_id"] == "conv-1"
     assert payload["trigger"]["detection_surface"] == "output"
+    assert payload["trigger"]["incident_id"] is None
+    assert payload["trigger"]["correlation_count"] == 1
     assert payload["severity"] == "high"
 
 
