@@ -29,7 +29,7 @@ print(alerts)
 - Injection helpers for system prompt and context wrappers
 - Aho-Corasick output scanning for deterministic matching
 - Alert dispatch to webhook, Slack, stdout, file, or callback
-- Integration wrappers for OpenAI-style callables, chain `.invoke()`, and query-engine `.query()`
+- Integration wrappers for OpenAI-style callables, Runnable `.invoke()/batch()`, chain `.invoke()`, and query-engine `.query()`
 
 ## Integration patterns
 
@@ -37,6 +37,18 @@ print(alerts)
 # OpenAI-style callable
 safe_create = honey.wrap_llm_call(client.chat.completions.create)
 resp = safe_create(model="gpt-4o-mini", messages=[...])
+```
+
+```python
+# OpenAI SDK client patching
+honey.patch_openai_client(client)
+resp = client.chat.completions.create(model="gpt-4o-mini", messages=[...])
+```
+
+```python
+# Runnable-style object (LangChain core)
+safe_runnable = honey.wrap_runnable(runnable)
+result = safe_runnable.invoke({"query": "..."})
 ```
 
 ```python
@@ -82,6 +94,14 @@ Webhook/file JSON alerts follow this structure:
 
 ```bash
 pip install -e .
+```
+
+Optional extras:
+
+```bash
+pip install -e .[openai]
+pip install -e .[langchain]
+pip install -e .[llamaindex]
 ```
 
 ## Tests

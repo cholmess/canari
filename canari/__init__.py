@@ -1,5 +1,6 @@
 import asyncio
 
+from canari.adapters import patch_openai_client, wrap_runnable
 from canari.alerter import AlertDispatcher
 from canari.generator import CanaryGenerator
 from canari.integrations import inject_canaries_into_index, wrap_chain, wrap_query_engine
@@ -72,6 +73,12 @@ class CanariClient:
     def wrap_query_engine(self, query_engine):
         return wrap_query_engine(query_engine, self.scan_output)
 
+    def wrap_runnable(self, runnable):
+        return wrap_runnable(runnable, self.scan_output)
+
+    def patch_openai_client(self, client):
+        return patch_openai_client(client, self.wrap_llm_call)
+
     def scan_output(self, output: str, context: dict | None = None) -> list[AlertEvent]:
         events = self.scanner.scan(output, context=context)
         for event in events:
@@ -119,7 +126,9 @@ __all__ = [
     "InjectionStrategy",
     "OutputScanner",
     "TokenType",
+    "wrap_runnable",
     "wrap_chain",
     "wrap_query_engine",
+    "patch_openai_client",
     "init",
 ]

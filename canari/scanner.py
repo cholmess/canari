@@ -135,7 +135,7 @@ class OutputScanner:
         if hasattr(result, "content"):
             return str(result.content)
         if isinstance(result, dict):
-            for key in ("output", "text", "content", "answer", "result"):
+            for key in ("output", "output_text", "text", "content", "answer", "result"):
                 if key in result:
                     return str(result[key])
             if "choices" in result and result["choices"]:
