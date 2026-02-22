@@ -89,6 +89,7 @@ class CanariClient:
         for event in events:
             correlated = self.incidents.correlate(event)
             correlated_events.append(correlated)
+            self.registry.record_alert(correlated)
             self.alerter.dispatch(correlated)
         return correlated_events
 
@@ -112,6 +113,7 @@ class CanariClient:
         for event in events:
             correlated = self.incidents.correlate(event)
             correlated_events.append(correlated)
+            self.registry.record_alert(correlated)
             self.alerter.dispatch(correlated)
         return correlated_events
 
@@ -131,6 +133,24 @@ class CanariClient:
 
     def registry_stats(self) -> dict:
         return self.registry.stats()
+
+    def alert_history(
+        self,
+        *,
+        limit: int = 50,
+        severity: str | None = None,
+        detection_surface: str | None = None,
+        conversation_id: str | None = None,
+    ):
+        return self.registry.list_alerts(
+            limit=limit,
+            severity=severity,
+            detection_surface=detection_surface,
+            conversation_id=conversation_id,
+        )
+
+    def alert_stats(self) -> dict:
+        return self.registry.alert_stats()
 
     def recent_incidents(self, limit: int = 50):
         return self.incidents.recent_incidents(limit=limit)

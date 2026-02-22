@@ -34,6 +34,7 @@ print(alerts)
 - Deterministic exfiltration-pattern assessment (`low`/`medium`/`high`/`critical`)
 - Registry exposure stats (`total/active/by_type/by_strategy`)
 - Conversation-level correlation (`incident_id`, `correlation_count`) for repeated/multi-surface attacks
+- Local alert journal in SQLite (`alert_history`, `alert_stats`)
 
 ## Integration patterns
 
@@ -119,6 +120,7 @@ Optional extras:
 pip install -e .[openai]
 pip install -e .[langchain]
 pip install -e .[llamaindex]
+pip install -e .[speed]
 ```
 
 ## Tests
@@ -140,6 +142,14 @@ Recent incidents:
 incidents = honey.recent_incidents(limit=20)
 for i in incidents:
     print(i.incident_id, i.max_severity, i.event_count)
+```
+
+Alert journal:
+
+```python
+alerts = honey.alert_history(limit=25, severity="critical")
+stats = honey.alert_stats()
+print(len(alerts), stats["total_alerts"])
 ```
 
 ## CI and release checks

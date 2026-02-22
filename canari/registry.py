@@ -5,7 +5,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from canari.models import CanaryToken, InjectionStrategy, TokenType
+from canari.models import AlertEvent, AlertSeverity, CanaryToken, InjectionStrategy, TokenType
 
 
 class CanaryRegistry:
@@ -37,6 +37,38 @@ class CanaryRegistry:
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_canary_value ON canary_tokens(value)"
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS alert_events (
+                    id TEXT PRIMARY KEY,
+                    canary_id TEXT NOT NULL,
+                    canary_value TEXT NOT NULL,
+                    token_type TEXT NOT NULL,
+                    injection_strategy TEXT NOT NULL,
+                    injection_location TEXT NOT NULL,
+                    injected_at TEXT NOT NULL,
+                    severity TEXT NOT NULL,
+                    triggered_at TEXT NOT NULL,
+                    conversation_id TEXT,
+                    output_snippet TEXT NOT NULL,
+                    full_output TEXT,
+                    session_metadata TEXT NOT NULL,
+                    forensic_notes TEXT NOT NULL,
+                    detection_surface TEXT NOT NULL,
+                    incident_id TEXT,
+                    correlation_count INTEGER NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_alert_triggered_at ON alert_events(triggered_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_alert_severity ON alert_events(severity)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_alert_surface ON alert_events(detection_surface)"
             )
 
     def add(self, token: CanaryToken) -> None:
@@ -108,6 +140,85 @@ class CanaryRegistry:
             "by_strategy": {row["injection_strategy"]: row["c"] for row in by_strategy_rows},
         }
 
+    def record_alert(self, event: AlertEvent) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO alert_events
+                (id, canary_id, canary_value, token_type, injection_strategy, injection_location,
+                 injected_at, severity, triggered_at, conversation_id, output_snippet, full_output,
+                 session_metadata, forensic_notes, detection_surface, incident_id, correlation_count)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event.id,
+                    event.canary_id,
+                    event.canary_value,
+                    event.token_type.value,
+                    event.injection_strategy.value,
+                    event.injection_location,
+                    event.injected_at.isoformat(),
+                    event.severity.value,
+                    event.triggered_at.isoformat(),
+                    event.conversation_id,
+                    event.output_snippet,
+                    event.full_output,
+                    json.dumps(event.session_metadata),
+                    event.forensic_notes,
+                    event.detection_surface,
+                    event.incident_id,
+                    event.correlation_count,
+                ),
+            )
+
+    def list_alerts(
+        self,
+        *,
+        limit: int = 50,
+        severity: str | None = None,
+        detection_surface: str | None = None,
+        conversation_id: str | None = None,
+    ) -> list[AlertEvent]:
+        clauses = []
+        params: list = []
+        if severity:
+            clauses.append("severity = ?")
+            params.append(severity)
+        if detection_surface:
+            clauses.append("detection_surface = ?")
+            params.append(detection_surface)
+        if conversation_id:
+            clauses.append("conversation_id = ?")
+            params.append(conversation_id)
+
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        sql = f"""
+            SELECT * FROM alert_events
+            {where}
+            ORDER BY triggered_at DESC
+            LIMIT ?
+        """
+        params.append(max(1, limit))
+
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [self._row_to_alert(row) for row in rows]
+
+    def alert_stats(self) -> dict:
+        with self._connect() as conn:
+            total = conn.execute("SELECT COUNT(*) AS c FROM alert_events").fetchone()["c"]
+            by_severity = conn.execute(
+                "SELECT severity, COUNT(*) AS c FROM alert_events GROUP BY severity"
+            ).fetchall()
+            by_surface = conn.execute(
+                "SELECT detection_surface, COUNT(*) AS c FROM alert_events GROUP BY detection_surface"
+            ).fetchall()
+        return {
+            "total_alerts": total,
+            "by_severity": {row["severity"]: row["c"] for row in by_severity},
+            "by_surface": {row["detection_surface"]: row["c"] for row in by_surface},
+        }
+
     @staticmethod
     def _row_to_token(row: sqlite3.Row) -> CanaryToken:
         return CanaryToken(
@@ -119,4 +230,26 @@ class CanaryRegistry:
             injection_timestamp=datetime.fromisoformat(row["injection_timestamp"]),
             metadata=json.loads(row["metadata"]),
             active=bool(row["active"]),
+        )
+
+    @staticmethod
+    def _row_to_alert(row: sqlite3.Row) -> AlertEvent:
+        return AlertEvent(
+            id=row["id"],
+            canary_id=row["canary_id"],
+            canary_value=row["canary_value"],
+            token_type=TokenType(row["token_type"]),
+            injection_strategy=InjectionStrategy(row["injection_strategy"]),
+            injection_location=row["injection_location"],
+            injected_at=datetime.fromisoformat(row["injected_at"]),
+            severity=AlertSeverity(row["severity"]),
+            triggered_at=datetime.fromisoformat(row["triggered_at"]),
+            conversation_id=row["conversation_id"],
+            output_snippet=row["output_snippet"],
+            full_output=row["full_output"],
+            session_metadata=json.loads(row["session_metadata"]),
+            forensic_notes=row["forensic_notes"],
+            detection_surface=row["detection_surface"],
+            incident_id=row["incident_id"],
+            correlation_count=int(row["correlation_count"]),
         )
