@@ -37,6 +37,7 @@ print(alerts)
 - Local alert journal in SQLite (`alert_history`, `alert_stats`)
 - Forensic reporting (`forensic_summary`, `incident_report`)
 - Export helpers (`export_alerts_jsonl`, `export_alerts_csv`)
+- Built-in CLI (`python -m canari`)
 
 ## Integration patterns
 
@@ -167,6 +168,16 @@ Export alerts:
 ```python
 honey.export_alerts_jsonl("/tmp/canari-alerts.jsonl", severity="critical")
 honey.export_alerts_csv("/tmp/canari-alerts.csv", detection_surface="network_egress")
+```
+
+CLI usage:
+
+```bash
+python -m canari --db canari.db token-stats
+python -m canari --db canari.db alert-stats
+python -m canari --db canari.db alerts --limit 20 --severity critical
+python -m canari --db canari.db incidents --limit 20
+python -m canari --db canari.db export --format jsonl --out /tmp/canari-alerts.jsonl
 ```
 
 ## CI and release checks
