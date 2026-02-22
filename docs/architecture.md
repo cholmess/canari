@@ -13,3 +13,4 @@
 - `canari.exporter`: JSONL/CSV export for SIEM and offline forensics.
 - `canari.cli`: operational CLI for stats, incident reports, and exports.
 - retention policy: local alert journal can be purged by age.
+- operational backup: SQLite DB backup for incident response and archival.

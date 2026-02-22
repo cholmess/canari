@@ -170,6 +170,9 @@ class CanariClient:
     def purge_alerts_older_than(self, *, days: int) -> int:
         return self.registry.purge_alerts_older_than(days=days)
 
+    def backup_db(self, path: str) -> int:
+        return self.registry.backup_to(path)
+
     def forensic_summary(self, limit: int = 5000) -> dict:
         return self.reporter.forensic_summary(limit=limit)
 

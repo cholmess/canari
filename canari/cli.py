@@ -46,6 +46,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_purge = sub.add_parser("purge-alerts", help="Delete old alert events from local journal")
     p_purge.add_argument("--older-than-days", type=int, required=True)
+    p_backup = sub.add_parser("backup-db", help="Backup local Canari SQLite DB")
+    p_backup.add_argument("--out", required=True)
     p_scan = sub.add_parser("scan-text", help="Scan arbitrary text for canary leaks")
     p_scan.add_argument("--text", required=True)
     p_scan.add_argument("--conversation", default=None)
@@ -118,6 +120,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "purge-alerts":
         removed = honey.purge_alerts_older_than(days=args.older_than_days)
         print(encoder({"removed": removed, "older_than_days": args.older_than_days}))
+        return 0
+    if args.cmd == "backup-db":
+        size = honey.backup_db(args.out)
+        print(encoder({"path": args.out, "bytes": size}))
         return 0
     if args.cmd == "scan-text":
         events = honey.scan_output(

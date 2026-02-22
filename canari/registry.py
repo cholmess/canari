@@ -232,6 +232,14 @@ class CanaryRegistry:
             )
             return cur.rowcount
 
+    def backup_to(self, path: str) -> int:
+        dest = Path(path)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as src_conn:
+            with sqlite3.connect(str(dest)) as dest_conn:
+                src_conn.backup(dest_conn)
+        return dest.stat().st_size
+
     @staticmethod
     def _row_to_token(row: sqlite3.Row) -> CanaryToken:
         return CanaryToken(

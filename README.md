@@ -185,6 +185,7 @@ canari --db canari.db forensic-summary --limit 5000
 canari --db canari.db scan-text --text "leak sk_test_CANARI_x" --conversation conv-1
 canari --db canari.db export --format jsonl --out /tmp/canari-alerts.jsonl
 canari --db canari.db purge-alerts --older-than-days 30
+canari --db canari.db backup-db --out /tmp/canari-backup.db
 ```
 
 ## CI and release checks
