@@ -37,7 +37,7 @@ print(alerts)
 - Local alert journal in SQLite (`alert_history`, `alert_stats`)
 - Forensic reporting (`forensic_summary`, `incident_report`)
 - Export helpers (`export_alerts_jsonl`, `export_alerts_csv`)
-- Built-in CLI (`python -m canari`)
+- Built-in CLI (`canari` or `python -m canari`)
 - Alert journal retention (`purge_alerts_older_than`)
 
 ## Integration patterns
@@ -174,16 +174,16 @@ honey.export_alerts_csv("/tmp/canari-alerts.csv", detection_surface="network_egr
 CLI usage:
 
 ```bash
-python -m canari --db canari.db token-stats
-python -m canari --db canari.db alert-stats
-python -m canari --db canari.db seed --n 5 --types api_key,email,stripe_key
-python -m canari --db canari.db alerts --limit 20 --severity critical
-python -m canari --db canari.db alerts --incident inc-conv-123-456
-python -m canari --db canari.db incidents --limit 20
-python -m canari --db canari.db forensic-summary --limit 5000
-python -m canari --db canari.db scan-text --text "leak sk_test_CANARI_x" --conversation conv-1
-python -m canari --db canari.db export --format jsonl --out /tmp/canari-alerts.jsonl
-python -m canari --db canari.db purge-alerts --older-than-days 30
+canari --db canari.db token-stats
+canari --db canari.db alert-stats
+canari --db canari.db seed --n 5 --types api_key,email,stripe_key
+canari --db canari.db alerts --limit 20 --severity critical
+canari --db canari.db alerts --incident inc-conv-123-456
+canari --db canari.db incidents --limit 20
+canari --db canari.db forensic-summary --limit 5000
+canari --db canari.db scan-text --text "leak sk_test_CANARI_x" --conversation conv-1
+canari --db canari.db export --format jsonl --out /tmp/canari-alerts.jsonl
+canari --db canari.db purge-alerts --older-than-days 30
 ```
 
 ## CI and release checks
