@@ -183,6 +183,7 @@ canari --db canari.db alerts --limit 20 --severity critical
 canari --db canari.db alerts --incident inc-conv-123-456
 canari --db canari.db incidents --limit 20
 canari --db canari.db forensic-summary --limit 5000
+canari --db canari.db incident-replay --incident inc-conv-123-456 --out /tmp/incident.jsonl
 canari --db canari.db scan-text --text "leak sk_test_CANARI_x" --conversation conv-1
 canari --db canari.db export --format jsonl --out /tmp/canari-alerts.jsonl
 canari --db canari.db purge-alerts --older-than-days 30

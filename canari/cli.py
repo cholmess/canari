@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
 from canari import init
 
@@ -33,6 +34,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_report = sub.add_parser("incident-report", help="Show incident timeline report")
     p_report.add_argument("incident_id")
+    p_replay = sub.add_parser("incident-replay", help="Write one incident timeline to JSONL")
+    p_replay.add_argument("--incident", required=True)
+    p_replay.add_argument("--out", required=True)
     p_summary = sub.add_parser("forensic-summary", help="Show global forensic summary")
     p_summary.add_argument("--limit", type=int, default=5000)
 
@@ -96,6 +100,15 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd == "incident-report":
         print(encoder(honey.incident_report(args.incident_id)))
+        return 0
+    if args.cmd == "incident-replay":
+        alerts = honey.alert_history(limit=5000, incident_id=args.incident)
+        out = Path(args.out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with out.open("w", encoding="utf-8") as f:
+            for alert in sorted(alerts, key=lambda a: a.triggered_at):
+                f.write(json.dumps(alert.model_dump(mode="json"), default=str) + "\n")
+        print(encoder({"incident_id": args.incident, "out": args.out, "written": len(alerts)}))
         return 0
     if args.cmd == "forensic-summary":
         print(encoder(honey.forensic_summary(limit=args.limit)))
