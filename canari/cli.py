@@ -21,6 +21,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_seed = sub.add_parser("seed", help="Generate and store canary tokens")
     p_seed.add_argument("--n", type=int, default=1)
     p_seed.add_argument("--types", default="api_key")
+    p_rotate = sub.add_parser("rotate-canaries", help="Deactivate active canaries and generate a new set")
+    p_rotate.add_argument("--n", type=int, default=3)
+    p_rotate.add_argument("--types", default="api_key")
 
     p_alerts = sub.add_parser("alerts", help="List recent alerts")
     p_alerts.add_argument("--limit", type=int, default=20)
@@ -83,6 +86,11 @@ def main(argv: list[str] | None = None) -> int:
         token_types = [t.strip() for t in args.types.split(",") if t.strip()]
         tokens = honey.generate(n_tokens=args.n, token_types=token_types)
         print(encoder([t.model_dump(mode="json") for t in tokens]))
+        return 0
+    if args.cmd == "rotate-canaries":
+        token_types = [t.strip() for t in args.types.split(",") if t.strip()]
+        report = honey.rotate_canaries(n_tokens=args.n, token_types=token_types)
+        print(encoder(report))
         return 0
     if args.cmd == "alerts":
         alerts = honey.alert_history(

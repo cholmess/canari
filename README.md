@@ -188,6 +188,7 @@ canari --db canari.db --compact token-stats
 canari --db canari.db alert-stats
 canari --db canari.db doctor
 canari --db canari.db seed --n 5 --types api_key,email,stripe_key
+canari --db canari.db rotate-canaries --n 5 --types api_key,email
 canari --db canari.db alerts --limit 20 --severity critical
 canari --db canari.db alerts --incident inc-conv-123-456
 canari --db canari.db incidents --limit 20

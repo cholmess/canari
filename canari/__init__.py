@@ -42,6 +42,20 @@ class CanariClient:
         self.scanner._rebuild_index()
         return tokens
 
+    def rotate_canaries(self, n_tokens: int = 3, token_types: list[str] | None = None) -> dict:
+        active = self.registry.list_active()
+        deactivated = 0
+        for token in active:
+            if self.registry.deactivate(token.id):
+                deactivated += 1
+        self.scanner._rebuild_index()
+        generated = self.generate(n_tokens=n_tokens, token_types=token_types)
+        return {
+            "deactivated": deactivated,
+            "generated": len(generated),
+            "active_now": len(self.registry.list_active()),
+        }
+
     def inject_system_prompt(self, system_prompt: str, canaries: list[CanaryToken], position: str = "end") -> str:
         return inject_into_system_prompt(system_prompt, canaries, position=position)
 
