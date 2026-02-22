@@ -40,6 +40,7 @@ class AlertDispatcher:
                 "detection_surface": event.detection_surface,
                 "output_snippet": event.output_snippet,
                 "conversation_id": event.conversation_id,
+                "tenant_id": event.tenant_id,
                 "incident_id": event.incident_id,
                 "correlation_count": event.correlation_count,
                 "session_metadata": event.session_metadata,

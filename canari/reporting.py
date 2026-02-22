@@ -49,10 +49,10 @@ class ForensicReporter:
             ],
         }
 
-    def forensic_summary(self, limit: int = 5000) -> dict:
-        alerts = self.registry.list_alerts(limit=limit)
-        token_stats = self.registry.stats()
-        alert_stats = self.registry.alert_stats()
+    def forensic_summary(self, limit: int = 5000, tenant_id: str | None = None) -> dict:
+        alerts = self.registry.list_alerts(limit=limit, tenant_id=tenant_id)
+        token_stats = self.registry.stats() if tenant_id is None else {"tenant_scoped": True}
+        alert_stats = self.registry.alert_stats(tenant_id=tenant_id)
 
         if not alerts:
             return {
@@ -78,6 +78,28 @@ class ForensicReporter:
             "alerts": alert_stats,
             "top_incidents": top_incidents,
         }
+
+    def siem_events(self, limit: int = 1000, tenant_id: str | None = None) -> list[dict]:
+        alerts = self.registry.list_alerts(limit=limit, tenant_id=tenant_id)
+        out = []
+        for a in alerts:
+            out.append(
+                {
+                    "ts": _to_z(a.triggered_at),
+                    "source": "canari",
+                    "event_type": "canary_leak",
+                    "severity": a.severity.value,
+                    "detection_surface": a.detection_surface,
+                    "incident_id": a.incident_id,
+                    "conversation_id": a.conversation_id,
+                    "tenant_id": a.tenant_id,
+                    "canary_id": a.canary_id,
+                    "token_type": a.token_type.value,
+                    "snippet": a.output_snippet,
+                    "correlation_count": a.correlation_count,
+                }
+            )
+        return out
 
 
 def _to_z(dt: datetime) -> str:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime, timezone
 from collections import Counter
 
 from canari.registry import CanaryRegistry
@@ -36,6 +37,64 @@ class ThreatIntelBuilder:
             "events_analyzed": len(alerts),
             "unique_signatures": len(counter),
             "signatures": signatures,
+        }
+
+    def export_share_bundle(self, limit: int = 5000) -> dict:
+        return {
+            "schema": "canari-threat-share-v1",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "opt_in_enabled": self.registry.threat_sharing_opt_in(),
+            "feed": self.local_feed(limit=limit),
+        }
+
+    def import_share_bundle(self, payload: dict, *, source: str = "community") -> dict:
+        signatures = payload.get("signatures")
+        if signatures is None:
+            signatures = payload.get("feed", {}).get("signatures", [])
+        normalized = [
+            {
+                "signature": row.get("signature"),
+                "count": row.get("count", 1),
+                "token_type": row.get("token_type"),
+                "surface": row.get("surface"),
+                "severity": row.get("severity"),
+            }
+            for row in signatures
+            if isinstance(row, dict)
+        ]
+        changed = self.registry.upsert_network_signatures(normalized, source=source)
+        return {"imported": changed, "source": source}
+
+    def network_signatures(self, *, limit: int = 500, offset: int = 0) -> list[dict]:
+        return self.registry.list_network_signatures(limit=limit, offset=offset)
+
+    def network_matches(self, *, local_limit: int = 5000, network_limit: int = 5000) -> dict:
+        local = self.local_feed(limit=local_limit)
+        network = self.registry.list_network_signatures(limit=network_limit)
+        local_by_sig = {row["signature"]: row for row in local["signatures"]}
+        matches = []
+        for row in network:
+            sig = row["signature"]
+            local_row = local_by_sig.get(sig)
+            if not local_row:
+                continue
+            matches.append(
+                {
+                    "signature": sig,
+                    "local_count": int(local_row["count"]),
+                    "network_count": int(row["count"]),
+                    "token_type": local_row.get("token_type") or row.get("token_type"),
+                    "surface": local_row.get("surface") or row.get("surface"),
+                    "severity": local_row.get("severity") or row.get("severity"),
+                    "source": row.get("source"),
+                }
+            )
+        matches.sort(key=lambda m: (m["network_count"], m["local_count"]), reverse=True)
+        return {
+            "matches": matches,
+            "match_count": len(matches),
+            "local_unique_signatures": local.get("unique_signatures", 0),
+            "network_signatures_considered": len(network),
         }
 
     @staticmethod

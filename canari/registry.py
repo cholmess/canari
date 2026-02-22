@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -95,10 +96,133 @@ class CanaryRegistry:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_events(ts DESC)"
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS api_keys (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    key_hash TEXT NOT NULL UNIQUE,
+                    role TEXT NOT NULL,
+                    tenant_id TEXT,
+                    created_at TEXT NOT NULL,
+                    last_used_at TEXT,
+                    is_active INTEGER NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_api_keys_active ON api_keys(is_active)"
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS network_signatures (
+                    signature TEXT PRIMARY KEY,
+                    token_type TEXT,
+                    surface TEXT,
+                    severity TEXT,
+                    source TEXT NOT NULL,
+                    first_seen TEXT NOT NULL,
+                    last_seen TEXT NOT NULL,
+                    count INTEGER NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_network_signatures_count ON network_signatures(count DESC)"
+            )
             # Lightweight migration for existing DBs.
             cols = {row["name"] for row in conn.execute("PRAGMA table_info(alert_events)").fetchall()}
             if "tenant_id" not in cols:
                 conn.execute("ALTER TABLE alert_events ADD COLUMN tenant_id TEXT")
+            key_cols = {row["name"] for row in conn.execute("PRAGMA table_info(api_keys)").fetchall()}
+            if "tenant_id" not in key_cols:
+                conn.execute("ALTER TABLE api_keys ADD COLUMN tenant_id TEXT")
+            if "last_used_at" not in key_cols:
+                conn.execute("ALTER TABLE api_keys ADD COLUMN last_used_at TEXT")
+
+    def set_threat_sharing_opt_in(self, enabled: bool) -> None:
+        self.set_setting("threat_intel.opt_in_share", "1" if enabled else "0")
+
+    def threat_sharing_opt_in(self) -> bool:
+        return self.get_setting("threat_intel.opt_in_share") == "1"
+
+    def upsert_network_signatures(self, signatures: list[dict], *, source: str = "import") -> int:
+        now = datetime.now(timezone.utc).isoformat()
+        changed = 0
+        with self._connect() as conn:
+            for sig in signatures:
+                signature = (sig.get("signature") or "").strip()
+                if not signature:
+                    continue
+                count = max(1, int(sig.get("count", 1)))
+                token_type = sig.get("token_type")
+                surface = sig.get("surface")
+                severity = sig.get("severity")
+                conn.execute(
+                    """
+                    INSERT INTO network_signatures
+                    (signature, token_type, surface, severity, source, first_seen, last_seen, count)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(signature) DO UPDATE SET
+                        token_type = COALESCE(excluded.token_type, network_signatures.token_type),
+                        surface = COALESCE(excluded.surface, network_signatures.surface),
+                        severity = COALESCE(excluded.severity, network_signatures.severity),
+                        source = excluded.source,
+                        last_seen = excluded.last_seen,
+                        count = network_signatures.count + excluded.count
+                    """,
+                    (signature, token_type, surface, severity, source, now, now, count),
+                )
+                changed += 1
+        return changed
+
+    def get_network_signature(self, signature: str) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT signature, token_type, surface, severity, source, first_seen, last_seen, count
+                FROM network_signatures
+                WHERE signature = ?
+                """,
+                (signature,),
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "signature": row["signature"],
+            "token_type": row["token_type"],
+            "surface": row["surface"],
+            "severity": row["severity"],
+            "source": row["source"],
+            "first_seen": row["first_seen"],
+            "last_seen": row["last_seen"],
+            "count": int(row["count"]),
+        }
+
+    def list_network_signatures(self, *, limit: int = 500, offset: int = 0) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT signature, token_type, surface, severity, source, first_seen, last_seen, count
+                FROM network_signatures
+                ORDER BY count DESC, last_seen DESC, signature ASC
+                LIMIT ? OFFSET ?
+                """,
+                (max(1, limit), max(0, offset)),
+            ).fetchall()
+        return [
+            {
+                "signature": row["signature"],
+                "token_type": row["token_type"],
+                "surface": row["surface"],
+                "severity": row["severity"],
+                "source": row["source"],
+                "first_seen": row["first_seen"],
+                "last_seen": row["last_seen"],
+                "count": int(row["count"]),
+            }
+            for row in rows
+        ]
 
     def add(self, token: CanaryToken) -> None:
         with self._connect() as conn:
@@ -205,6 +329,7 @@ class CanaryRegistry:
         self,
         *,
         limit: int = 50,
+        offset: int = 0,
         severity: str | None = None,
         detection_surface: str | None = None,
         conversation_id: str | None = None,
@@ -243,38 +368,58 @@ class CanaryRegistry:
             {where}
             ORDER BY triggered_at DESC
             LIMIT ?
+            OFFSET ?
         """
         params.append(max(1, limit))
+        params.append(max(0, offset))
 
         with self._connect() as conn:
             rows = conn.execute(sql, params).fetchall()
         return [self._row_to_alert(row) for row in rows]
 
-    def alert_stats(self) -> dict:
+    def alert_stats(self, *, tenant_id: str | None = None) -> dict:
+        where = "WHERE tenant_id = ?" if tenant_id else ""
+        params = (tenant_id,) if tenant_id else ()
+        by_tenant_sql = (
+            "SELECT tenant_id, COUNT(*) AS c FROM alert_events WHERE tenant_id = ? GROUP BY tenant_id"
+            if tenant_id
+            else "SELECT tenant_id, COUNT(*) AS c FROM alert_events WHERE tenant_id IS NOT NULL AND tenant_id != '' GROUP BY tenant_id"
+        )
+        top_conv_sql = (
+            """
+            SELECT conversation_id, COUNT(*) AS c
+            FROM alert_events
+            WHERE tenant_id = ? AND conversation_id IS NOT NULL AND conversation_id != ''
+            GROUP BY conversation_id
+            ORDER BY c DESC, conversation_id ASC
+            LIMIT 5
+            """
+            if tenant_id
+            else """
+            SELECT conversation_id, COUNT(*) AS c
+            FROM alert_events
+            WHERE conversation_id IS NOT NULL AND conversation_id != ''
+            GROUP BY conversation_id
+            ORDER BY c DESC, conversation_id ASC
+            LIMIT 5
+            """
+        )
         with self._connect() as conn:
-            total = conn.execute("SELECT COUNT(*) AS c FROM alert_events").fetchone()["c"]
+            total = conn.execute(f"SELECT COUNT(*) AS c FROM alert_events {where}", params).fetchone()["c"]
             by_severity = conn.execute(
-                "SELECT severity, COUNT(*) AS c FROM alert_events GROUP BY severity"
+                f"SELECT severity, COUNT(*) AS c FROM alert_events {where} GROUP BY severity",
+                params,
             ).fetchall()
             by_surface = conn.execute(
-                "SELECT detection_surface, COUNT(*) AS c FROM alert_events GROUP BY detection_surface"
+                f"SELECT detection_surface, COUNT(*) AS c FROM alert_events {where} GROUP BY detection_surface",
+                params,
             ).fetchall()
             by_token_type = conn.execute(
-                "SELECT token_type, COUNT(*) AS c FROM alert_events GROUP BY token_type"
+                f"SELECT token_type, COUNT(*) AS c FROM alert_events {where} GROUP BY token_type",
+                params,
             ).fetchall()
-            by_tenant = conn.execute(
-                "SELECT tenant_id, COUNT(*) AS c FROM alert_events WHERE tenant_id IS NOT NULL AND tenant_id != '' GROUP BY tenant_id"
-            ).fetchall()
-            top_conversations = conn.execute(
-                """
-                SELECT conversation_id, COUNT(*) AS c
-                FROM alert_events
-                WHERE conversation_id IS NOT NULL AND conversation_id != ''
-                GROUP BY conversation_id
-                ORDER BY c DESC, conversation_id ASC
-                LIMIT 5
-                """
-            ).fetchall()
+            by_tenant = conn.execute(by_tenant_sql, params if tenant_id else ()).fetchall()
+            top_conversations = conn.execute(top_conv_sql, params if tenant_id else ()).fetchall()
         return {
             "total_alerts": total,
             "by_severity": {row["severity"]: row["c"] for row in by_severity},
@@ -332,16 +477,105 @@ class CanaryRegistry:
                 ),
             )
 
-    def list_audit(self, limit: int = 100) -> list[dict]:
+    def list_audit(self, limit: int = 100, offset: int = 0) -> list[dict]:
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT ts, action, details FROM audit_events ORDER BY ts DESC LIMIT ?",
-                (max(1, limit),),
+                "SELECT ts, action, details FROM audit_events ORDER BY ts DESC LIMIT ? OFFSET ?",
+                (max(1, limit), max(0, offset)),
             ).fetchall()
         return [
             {"ts": row["ts"], "action": row["action"], "details": json.loads(row["details"])}
             for row in rows
         ]
+
+    def create_api_key(self, *, name: str, key: str, role: str = "reader", tenant_id: str | None = None) -> dict:
+        key_hash = self._hash_key(key)
+        created_at = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO api_keys (name, key_hash, role, tenant_id, created_at, last_used_at, is_active)
+                VALUES (?, ?, ?, ?, ?, NULL, 1)
+                """,
+                (name, key_hash, role, tenant_id, created_at),
+            )
+            key_id = cur.lastrowid
+        return {
+            "id": key_id,
+            "name": name,
+            "role": role,
+            "tenant_id": tenant_id,
+            "last_used_at": None,
+            "active": True,
+            "created_at": created_at,
+        }
+
+    def list_api_keys(self, *, include_inactive: bool = True) -> list[dict]:
+        where = "" if include_inactive else "WHERE is_active = 1"
+        sql = f"SELECT id, name, role, tenant_id, created_at, last_used_at, is_active FROM api_keys {where} ORDER BY id ASC"
+        with self._connect() as conn:
+            rows = conn.execute(sql).fetchall()
+        return [
+            {
+                "id": row["id"],
+                "name": row["name"],
+                "role": row["role"],
+                "tenant_id": row["tenant_id"],
+                "created_at": row["created_at"],
+                "last_used_at": row["last_used_at"],
+                "active": bool(row["is_active"]),
+            }
+            for row in rows
+        ]
+
+    def revoke_api_key(self, key_id: int) -> bool:
+        with self._connect() as conn:
+            cur = conn.execute("UPDATE api_keys SET is_active = 0 WHERE id = ?", (key_id,))
+            return cur.rowcount > 0
+
+    def verify_api_key(self, key: str) -> dict | None:
+        key_hash = self._hash_key(key)
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id, name, role, tenant_id, created_at, last_used_at, is_active FROM api_keys WHERE key_hash = ? AND is_active = 1",
+                (key_hash,),
+            ).fetchone()
+        if not row:
+            return None
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            conn.execute("UPDATE api_keys SET last_used_at = ? WHERE id = ?", (now, row["id"]))
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "role": row["role"],
+            "tenant_id": row["tenant_id"],
+            "created_at": row["created_at"],
+            "last_used_at": now,
+            "active": bool(row["is_active"]),
+        }
+
+    def rotate_api_key(self, *, key_id: int, new_key: str) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id, name, role, tenant_id, is_active FROM api_keys WHERE id = ?",
+                (key_id,),
+            ).fetchone()
+        if not row:
+            return None
+
+        created = self.create_api_key(
+            name=row["name"],
+            key=new_key,
+            role=row["role"],
+            tenant_id=row["tenant_id"],
+        )
+        old_revoked = self.revoke_api_key(key_id)
+        return {"old_key_revoked": old_revoked, "new_key": created}
+
+    @staticmethod
+    def _hash_key(key: str) -> str:
+        return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
     def doctor(self) -> dict:
         checks = {

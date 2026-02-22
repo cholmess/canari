@@ -31,6 +31,7 @@ class CanariClient:
         self.threat_intel = ThreatIntelBuilder(self.registry)
         self.rate_limiter: AlertRateLimiter | None = None
         self.min_dispatch_severity: str | None = None
+        self.retention_days: int | None = None
         self.default_tenant_id: str | None = None
         self.alerter = AlertDispatcher(canari_version=__version__)
         self.alerter.add_stdout()
@@ -121,6 +122,7 @@ class CanariClient:
             self.registry.record_alert(correlated)
             if self._should_dispatch(correlated):
                 self.alerter.dispatch(correlated)
+            self._dispatch_network_match_if_opted_in(correlated)
         return correlated_events
 
     def monitor_http_request(
@@ -147,6 +149,7 @@ class CanariClient:
             self.registry.record_alert(correlated)
             if self._should_dispatch(correlated):
                 self.alerter.dispatch(correlated)
+            self._dispatch_network_match_if_opted_in(correlated)
         return correlated_events
 
     def wrap_httpx_client(self, client):
@@ -179,6 +182,7 @@ class CanariClient:
         self,
         *,
         limit: int = 50,
+        offset: int = 0,
         severity: str | None = None,
         detection_surface: str | None = None,
         conversation_id: str | None = None,
@@ -189,6 +193,7 @@ class CanariClient:
     ):
         return self.registry.list_alerts(
             limit=limit,
+            offset=offset,
             severity=severity,
             detection_surface=detection_surface,
             conversation_id=conversation_id,
@@ -224,6 +229,11 @@ class CanariClient:
         api_token: str | None = None,
     ) -> DashboardServer:
         return DashboardServer(db_path=self.registry.db_path, host=host, port=port, api_token=api_token)
+
+    def create_fastapi_app(self, api_key: str | None = None):
+        from canari.api import create_app
+
+        return create_app(db_path=self.registry.db_path, api_key=api_key)
 
     def set_alert_rate_limit(self, *, window_seconds: int = 60, max_dispatches: int = 3) -> None:
         self.rate_limiter = AlertRateLimiter(window_seconds=window_seconds, max_dispatches=max_dispatches)
@@ -262,6 +272,10 @@ class CanariClient:
                 str(int(self.rate_limiter.window.total_seconds())),
             )
             self.registry.set_setting("policy.rate_max_dispatches", str(self.rate_limiter.max_dispatches))
+        self.registry.set_setting(
+            "policy.retention_days",
+            "" if self.retention_days is None else str(int(self.retention_days)),
+        )
         self.registry.record_audit("persist_policy", self.policy())
 
     def load_policy(self) -> None:
@@ -280,6 +294,14 @@ class CanariClient:
                 self.disable_alert_rate_limit()
         else:
             self.disable_alert_rate_limit()
+        retention = self.registry.get_setting("policy.retention_days")
+        if retention:
+            try:
+                self.retention_days = int(retention)
+            except Exception:
+                self.retention_days = None
+        else:
+            self.retention_days = None
 
     def policy(self) -> dict:
         out = {
@@ -291,10 +313,33 @@ class CanariClient:
                 "window_seconds": int(self.rate_limiter.window.total_seconds()),
                 "max_dispatches": self.rate_limiter.max_dispatches,
             }
+        out["retention_days"] = self.retention_days
         return out
+
+    def set_retention_policy(self, days: int | None) -> None:
+        if days is None:
+            self.retention_days = None
+            return
+        n = int(days)
+        if n <= 0:
+            raise ValueError("retention days must be > 0")
+        self.retention_days = n
+
+    def apply_retention_policy(self) -> dict:
+        if self.retention_days is None:
+            return {"applied": False, "removed": 0, "retention_days": None}
+        removed = self.purge_alerts_older_than(days=self.retention_days)
+        self.registry.record_audit(
+            "apply_retention_policy",
+            {"retention_days": self.retention_days, "removed": removed},
+        )
+        return {"applied": True, "removed": removed, "retention_days": self.retention_days}
 
     def forensic_summary(self, limit: int = 5000) -> dict:
         return self.reporter.forensic_summary(limit=limit)
+
+    def siem_events(self, limit: int = 1000, tenant_id: str | None = None) -> list[dict]:
+        return self.reporter.siem_events(limit=limit, tenant_id=tenant_id)
 
     def incident_report(self, incident_id: str) -> dict:
         return self.reporter.incident_report(incident_id)
@@ -302,8 +347,62 @@ class CanariClient:
     def local_threat_feed(self, limit: int = 5000) -> dict:
         return self.threat_intel.local_feed(limit=limit)
 
-    def audit_log(self, limit: int = 100) -> list[dict]:
-        return self.registry.list_audit(limit=limit)
+    def export_threat_share_bundle(self, limit: int = 5000) -> dict:
+        return self.threat_intel.export_share_bundle(limit=limit)
+
+    def import_threat_share_bundle(self, payload: dict, *, source: str = "community") -> dict:
+        out = self.threat_intel.import_share_bundle(payload, source=source)
+        self.registry.record_audit("import_threat_share_bundle", out)
+        return out
+
+    def set_threat_sharing_opt_in(self, enabled: bool) -> None:
+        self.registry.set_threat_sharing_opt_in(enabled)
+        self.registry.record_audit("set_threat_sharing_opt_in", {"enabled": bool(enabled)})
+
+    def threat_sharing_status(self) -> dict:
+        return {"opt_in_enabled": self.registry.threat_sharing_opt_in()}
+
+    def network_signatures(self, limit: int = 500, offset: int = 0) -> list[dict]:
+        return self.threat_intel.network_signatures(limit=limit, offset=offset)
+
+    def network_threat_matches(self, *, local_limit: int = 5000, network_limit: int = 5000) -> dict:
+        return self.threat_intel.network_matches(local_limit=local_limit, network_limit=network_limit)
+
+    def audit_log(self, limit: int = 100, offset: int = 0) -> list[dict]:
+        return self.registry.list_audit(limit=limit, offset=offset)
+
+    def create_api_key(
+        self,
+        *,
+        name: str,
+        key: str,
+        role: str = "reader",
+        tenant_id: str | None = None,
+    ) -> dict:
+        out = self.registry.create_api_key(name=name, key=key, role=role, tenant_id=tenant_id)
+        self.registry.record_audit(
+            "create_api_key",
+            {"id": out["id"], "name": name, "role": role, "tenant_id": tenant_id},
+        )
+        return out
+
+    def list_api_keys(self, *, include_inactive: bool = True) -> list[dict]:
+        return self.registry.list_api_keys(include_inactive=include_inactive)
+
+    def revoke_api_key(self, key_id: int) -> bool:
+        revoked = self.registry.revoke_api_key(key_id)
+        self.registry.record_audit("revoke_api_key", {"id": key_id, "revoked": revoked})
+        return revoked
+
+    def rotate_api_key(self, *, key_id: int, new_key: str) -> dict:
+        out = self.registry.rotate_api_key(key_id=key_id, new_key=new_key)
+        if out is None:
+            return {"old_key_revoked": False, "new_key": None}
+        self.registry.record_audit(
+            "rotate_api_key",
+            {"old_key_id": key_id, "new_key_id": out["new_key"]["id"], "revoked": out["old_key_revoked"]},
+        )
+        return out
 
     def export_alerts_jsonl(
         self,
@@ -368,6 +467,31 @@ class CanariClient:
         if self.min_dispatch_severity is None:
             return True
         return self._severity_rank(event.severity.value) >= self._severity_rank(self.min_dispatch_severity)
+
+    def _dispatch_network_match_if_opted_in(self, event: AlertEvent) -> None:
+        if not self.registry.threat_sharing_opt_in():
+            return
+        signature = self.threat_intel._sig(event)
+        match = self.registry.get_network_signature(signature)
+        if not match:
+            return
+        shadow = event.model_copy(deep=True)
+        note = (
+            f"network_signature_match={signature} "
+            f"network_count={match['count']} source={match.get('source')}"
+        )
+        shadow.forensic_notes = f"{event.forensic_notes} | {note}".strip(" |")
+        if self._should_dispatch(shadow):
+            self.alerter.dispatch(shadow)
+        self.registry.record_audit(
+            "network_signature_match",
+            {
+                "alert_id": event.id,
+                "signature": signature,
+                "network_count": match["count"],
+                "source": match.get("source"),
+            },
+        )
 
     @staticmethod
     def _severity_rank(severity: str) -> int:

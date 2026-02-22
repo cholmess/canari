@@ -17,7 +17,13 @@
 - `canari.rate_limit`: optional in-memory dispatch throttling for alert-noise control.
 - `canari.dashboard`: local HTTP dashboard and JSON API for phase-3 visibility.
 - `canari.threat_intel`: anonymized local threat-signature feed generation.
+- Threat-sharing controls: opt-in toggle, bundle import, network signature catalog, local/network match analysis.
 - enterprise support: tenant-aware alert storage and filtering (`tenant_id`).
 - dashboard hardening: optional API token gate for `/api/*` endpoints.
 - tenant operations: default tenant context for automatic attribution in scans/egress monitors.
 - auditability: local immutable-style admin action log (`audit_events`).
+- `canari.api`: FastAPI backend for production-style API serving.
+- API security: static key or persisted API-key auth from local registry.
+- RBAC: `reader` vs `admin` roles, with tenant-scoped readers in API layer.
+- key ops: persisted key rotation and usage tracking (`last_used_at`).
+- API operations: admin-only endpoints for key lifecycle management.

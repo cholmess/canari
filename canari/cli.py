@@ -20,6 +20,20 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("alerter-health", help="Show alert dispatcher channel health counters")
     p_audit = sub.add_parser("audit-log", help="Show administrative audit log")
     p_audit.add_argument("--limit", type=int, default=50)
+    p_audit.add_argument("--offset", type=int, default=0)
+    p_keys = sub.add_parser("api-keys", help="Manage persisted API keys")
+    p_keys_sub = p_keys.add_subparsers(dest="api_keys_cmd", required=True)
+    p_keys_add = p_keys_sub.add_parser("add")
+    p_keys_add.add_argument("--name", required=True)
+    p_keys_add.add_argument("--key", required=True)
+    p_keys_add.add_argument("--role", default="reader")
+    p_keys_add.add_argument("--tenant", default=None)
+    p_keys_sub.add_parser("list")
+    p_keys_revoke = p_keys_sub.add_parser("revoke")
+    p_keys_revoke.add_argument("--id", type=int, required=True)
+    p_keys_rotate = p_keys_sub.add_parser("rotate")
+    p_keys_rotate.add_argument("--id", type=int, required=True)
+    p_keys_rotate.add_argument("--new-key", required=True)
     sub.add_parser("doctor", help="Run local DB/schema diagnostics")
     p_policy = sub.add_parser("policy", help="Show or set persisted dispatch policy")
     p_policy_sub = p_policy.add_subparsers(dest="policy_cmd", required=True)
@@ -28,6 +42,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_policy_set.add_argument("--min-severity", default=None, choices=["low", "medium", "high", "critical"])
     p_policy_set.add_argument("--rate-window", type=int, default=None)
     p_policy_set.add_argument("--rate-max", type=int, default=None)
+    p_policy_set.add_argument("--retention-days", type=int, default=None)
+    sub.add_parser("apply-retention", help="Apply persisted retention policy now")
     p_seed = sub.add_parser("seed", help="Generate and store canary tokens")
     p_seed.add_argument("--n", type=int, default=1)
     p_seed.add_argument("--types", default="api_key")
@@ -37,6 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_alerts = sub.add_parser("alerts", help="List recent alerts")
     p_alerts.add_argument("--limit", type=int, default=20)
+    p_alerts.add_argument("--offset", type=int, default=0)
     p_alerts.add_argument("--severity", default=None)
     p_alerts.add_argument("--surface", default=None)
     p_alerts.add_argument("--conversation", default=None)
@@ -55,6 +72,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_dash.add_argument("--port", type=int, default=8080)
     p_dash.add_argument("--api-token", default=None, help="Optional token for /api/* auth")
     p_dash.add_argument("--check", action="store_true", help="Start and immediately stop (CI health check)")
+    p_api = sub.add_parser("serve-api", help="Serve FastAPI backend for dashboard and integrations")
+    p_api.add_argument("--host", default="127.0.0.1")
+    p_api.add_argument("--port", type=int, default=8000)
+    p_api.add_argument("--api-key", default=None, help="Optional API key for /v1/* endpoints")
+    p_api.add_argument("--check", action="store_true", help="Validate app can be created, then exit")
     p_replay = sub.add_parser("incident-replay", help="Write one incident timeline to JSONL")
     p_replay.add_argument("--incident", required=True)
     p_replay.add_argument("--out", required=True)
@@ -62,6 +84,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_summary.add_argument("--limit", type=int, default=5000)
     p_feed = sub.add_parser("threat-feed", help="Build anonymized local threat-intel feed")
     p_feed.add_argument("--limit", type=int, default=5000)
+    p_share = sub.add_parser("threat-share", help="Manage opt-in threat intelligence sharing")
+    p_share_sub = p_share.add_subparsers(dest="threat_share_cmd", required=True)
+    p_share_sub.add_parser("show")
+    p_share_sub.add_parser("enable")
+    p_share_sub.add_parser("disable")
+    p_import = sub.add_parser("threat-import", help="Import shared threat signature bundle JSON")
+    p_import.add_argument("--in", dest="in_path", required=True)
+    p_import.add_argument("--source", default="community")
+    p_net = sub.add_parser("network-signatures", help="List imported network threat signatures")
+    p_net.add_argument("--limit", type=int, default=100)
+    p_net.add_argument("--offset", type=int, default=0)
+    p_matches = sub.add_parser("threat-matches", help="Show local vs network signature matches")
+    p_matches.add_argument("--local-limit", type=int, default=5000)
+    p_matches.add_argument("--network-limit", type=int, default=5000)
 
     p_export = sub.add_parser("export", help="Export alerts to JSONL or CSV")
     p_export.add_argument("--format", choices=["jsonl", "csv"], required=True)
@@ -83,6 +119,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_scan = sub.add_parser("scan-text", help="Scan arbitrary text for canary leaks")
     p_scan.add_argument("--text", required=True)
     p_scan.add_argument("--conversation", default=None)
+    p_siem = sub.add_parser("siem-export", help="Export normalized SIEM events as JSON or JSONL")
+    p_siem.add_argument("--limit", type=int, default=1000)
+    p_siem.add_argument("--tenant", default=None)
+    p_siem.add_argument("--out", default=None, help="Optional output path (.jsonl)")
 
     return parser
 
@@ -107,8 +147,30 @@ def main(argv: list[str] | None = None) -> int:
         print(encoder(honey.alerter_health()))
         return 0
     if args.cmd == "audit-log":
-        print(encoder(honey.audit_log(limit=args.limit)))
+        print(encoder(honey.audit_log(limit=args.limit, offset=args.offset)))
         return 0
+    if args.cmd == "api-keys":
+        if args.api_keys_cmd == "add":
+            print(
+                encoder(
+                    honey.create_api_key(
+                        name=args.name,
+                        key=args.key,
+                        role=args.role,
+                        tenant_id=args.tenant,
+                    )
+                )
+            )
+            return 0
+        if args.api_keys_cmd == "list":
+            print(encoder(honey.list_api_keys()))
+            return 0
+        if args.api_keys_cmd == "revoke":
+            print(encoder({"id": args.id, "revoked": honey.revoke_api_key(args.id)}))
+            return 0
+        if args.api_keys_cmd == "rotate":
+            print(encoder(honey.rotate_api_key(key_id=args.id, new_key=args.new_key)))
+            return 0
     if args.cmd == "doctor":
         print(encoder(honey.doctor()))
         return 0
@@ -121,9 +183,14 @@ def main(argv: list[str] | None = None) -> int:
                 honey.set_min_dispatch_severity(args.min_severity)
             if args.rate_window is not None and args.rate_max is not None:
                 honey.set_alert_rate_limit(window_seconds=args.rate_window, max_dispatches=args.rate_max)
+            if args.retention_days is not None:
+                honey.set_retention_policy(args.retention_days)
             honey.persist_policy()
             print(encoder({"saved": True, "policy": honey.policy()}))
             return 0
+    if args.cmd == "apply-retention":
+        print(encoder(honey.apply_retention_policy()))
+        return 0
     if args.cmd == "seed":
         token_types = [t.strip() for t in args.types.split(",") if t.strip()]
         tokens = honey.generate(n_tokens=args.n, token_types=token_types)
@@ -137,6 +204,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "alerts":
         alerts = honey.alert_history(
             limit=args.limit,
+            offset=args.offset,
             severity=args.severity,
             detection_surface=args.surface,
             conversation_id=args.conversation,
@@ -173,6 +241,23 @@ def main(argv: list[str] | None = None) -> int:
         except KeyboardInterrupt:
             server.stop()
             return 0
+    if args.cmd == "serve-api":
+        try:
+            app = honey.create_fastapi_app(api_key=args.api_key)
+        except Exception as exc:
+            print(encoder({"error": "fastapi_unavailable", "detail": str(exc)}))
+            return 1
+
+        if args.check:
+            print(encoder({"ok": True, "app": "fastapi", "host": args.host, "port": args.port}))
+            return 0
+        try:
+            import uvicorn
+        except Exception as exc:
+            print(encoder({"error": "uvicorn_unavailable", "detail": str(exc)}))
+            return 1
+        uvicorn.run(app, host=args.host, port=args.port)
+        return 0
     if args.cmd == "incident-replay":
         alerts = honey.alert_history(limit=5000, incident_id=args.incident)
         out = Path(args.out)
@@ -187,6 +272,36 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd == "threat-feed":
         print(encoder(honey.local_threat_feed(limit=args.limit)))
+        return 0
+    if args.cmd == "threat-share":
+        if args.threat_share_cmd == "show":
+            print(encoder(honey.threat_sharing_status()))
+            return 0
+        if args.threat_share_cmd == "enable":
+            honey.set_threat_sharing_opt_in(True)
+            print(encoder(honey.threat_sharing_status()))
+            return 0
+        if args.threat_share_cmd == "disable":
+            honey.set_threat_sharing_opt_in(False)
+            print(encoder(honey.threat_sharing_status()))
+            return 0
+    if args.cmd == "threat-import":
+        with Path(args.in_path).open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+        print(encoder(honey.import_threat_share_bundle(payload, source=args.source)))
+        return 0
+    if args.cmd == "network-signatures":
+        print(encoder(honey.network_signatures(limit=args.limit, offset=args.offset)))
+        return 0
+    if args.cmd == "threat-matches":
+        print(
+            encoder(
+                honey.network_threat_matches(
+                    local_limit=args.local_limit,
+                    network_limit=args.network_limit,
+                )
+            )
+        )
         return 0
     if args.cmd == "export":
         if args.format == "jsonl":
@@ -231,6 +346,18 @@ def main(argv: list[str] | None = None) -> int:
             context={"conversation_id": args.conversation} if args.conversation else None,
         )
         print(encoder([e.model_dump(mode="json") for e in events]))
+        return 0
+    if args.cmd == "siem-export":
+        rows = honey.siem_events(limit=args.limit, tenant_id=args.tenant)
+        if args.out:
+            out = Path(args.out)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            with out.open("w", encoding="utf-8") as f:
+                for row in rows:
+                    f.write(json.dumps(row, default=str) + "\n")
+            print(encoder({"exported": len(rows), "path": args.out, "format": "jsonl"}))
+            return 0
+        print(encoder(rows))
         return 0
 
     print("unknown command", file=sys.stderr)

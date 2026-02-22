@@ -30,6 +30,9 @@
 ## Phase 4 — Threat Intelligence (Local)
 - [x] Anonymized local threat-signature feed generation
 - [x] CLI threat-feed output
+- [x] Opt-in threat intelligence sharing toggle (persisted)
+- [x] Network signature database (imported shared signatures)
+- [x] Automated network-match alert fanout for opted-in deployments
 
 ## Phase 5 — Enterprise Controls (Foundational)
 - [x] Tenant-aware alert attribution/filtering (`tenant_id`)
@@ -37,6 +40,7 @@
 - [x] Webhook payload signing + verification
 - [x] Persisted policy controls and audit log
 - [x] Dashboard API token gate
+- [x] SIEM-style normalized event API/export (`/v1/siem/events`, `siem-export`)
 
 ## Current Test Status
 - `pytest`: passing (with one sandbox-related dashboard socket test skip)
