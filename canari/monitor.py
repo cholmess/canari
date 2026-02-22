@@ -76,6 +76,7 @@ class EgressMonitor:
                         f"Assessment={assessment.reason}. Injection-to-trigger interval={interval}."
                     ),
                     detection_surface="network_egress",
+                    tenant_id=(context.get("session_metadata", {}) or {}).get("tenant_id"),
                 )
             )
         return events

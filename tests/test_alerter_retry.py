@@ -9,6 +9,7 @@ class DummyClient:
     def __init__(self, outcomes):
         self.outcomes = outcomes
         self.calls = 0
+        self.requests = []
 
     def __enter__(self):
         return self
@@ -18,6 +19,7 @@ class DummyClient:
 
     def post(self, *args, **kwargs):
         self.calls += 1
+        self.requests.append({"args": args, "kwargs": kwargs})
         outcome = self.outcomes.pop(0)
         if isinstance(outcome, Exception):
             raise outcome
@@ -67,3 +69,32 @@ def test_dispatch_failure_counted():
 
     health = dispatcher.health()
     assert health["dispatch_failures"] == 1
+
+
+def test_webhook_signing_headers():
+    dispatcher = AlertDispatcher()
+    client = DummyClient([DummyResp(ok=True)])
+
+    with patch("canari.alerter.httpx.Client", return_value=client):
+        dispatcher.add_webhook(
+            "https://example.com",
+            retries=1,
+            backoff_seconds=0,
+            signing_secret="topsecret",
+        )
+        dispatcher.dispatch(_event())
+
+    req = client.requests[0]["kwargs"]
+    headers = req["headers"]
+    assert headers["X-Canari-Signature"].startswith("sha256=")
+    assert headers["X-Canari-Signature-Version"] == "v1"
+
+
+def test_verify_signature():
+    dispatcher = AlertDispatcher()
+    event = _event()
+    payload = dispatcher.build_payload(event)
+    headers = dispatcher._sign_headers(payload, "topsecret")
+
+    assert dispatcher.verify_signature(payload, headers, "topsecret") is True
+    assert dispatcher.verify_signature(payload, headers, "wrong") is False

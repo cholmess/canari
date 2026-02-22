@@ -57,7 +57,8 @@ class CanaryRegistry:
                     forensic_notes TEXT NOT NULL,
                     detection_surface TEXT NOT NULL,
                     incident_id TEXT,
-                    correlation_count INTEGER NOT NULL
+                    correlation_count INTEGER NOT NULL,
+                    tenant_id TEXT
                 )
                 """
             )
@@ -70,6 +71,34 @@ class CanaryRegistry:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_alert_surface ON alert_events(detection_surface)"
             )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_alert_tenant ON alert_events(tenant_id)"
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS audit_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    details TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_events(ts DESC)"
+            )
+            # Lightweight migration for existing DBs.
+            cols = {row["name"] for row in conn.execute("PRAGMA table_info(alert_events)").fetchall()}
+            if "tenant_id" not in cols:
+                conn.execute("ALTER TABLE alert_events ADD COLUMN tenant_id TEXT")
 
     def add(self, token: CanaryToken) -> None:
         with self._connect() as conn:
@@ -147,8 +176,8 @@ class CanaryRegistry:
                 INSERT INTO alert_events
                 (id, canary_id, canary_value, token_type, injection_strategy, injection_location,
                  injected_at, severity, triggered_at, conversation_id, output_snippet, full_output,
-                 session_metadata, forensic_notes, detection_surface, incident_id, correlation_count)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 session_metadata, forensic_notes, detection_surface, incident_id, correlation_count, tenant_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     event.id,
@@ -168,6 +197,7 @@ class CanaryRegistry:
                     event.detection_surface,
                     event.incident_id,
                     event.correlation_count,
+                    event.tenant_id,
                 ),
             )
 
@@ -181,6 +211,7 @@ class CanaryRegistry:
         incident_id: str | None = None,
         since: str | None = None,
         until: str | None = None,
+        tenant_id: str | None = None,
     ) -> list[AlertEvent]:
         clauses = []
         params: list = []
@@ -202,6 +233,9 @@ class CanaryRegistry:
         if until:
             clauses.append("triggered_at <= ?")
             params.append(until)
+        if tenant_id:
+            clauses.append("tenant_id = ?")
+            params.append(tenant_id)
 
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         sql = f"""
@@ -225,10 +259,32 @@ class CanaryRegistry:
             by_surface = conn.execute(
                 "SELECT detection_surface, COUNT(*) AS c FROM alert_events GROUP BY detection_surface"
             ).fetchall()
+            by_token_type = conn.execute(
+                "SELECT token_type, COUNT(*) AS c FROM alert_events GROUP BY token_type"
+            ).fetchall()
+            by_tenant = conn.execute(
+                "SELECT tenant_id, COUNT(*) AS c FROM alert_events WHERE tenant_id IS NOT NULL AND tenant_id != '' GROUP BY tenant_id"
+            ).fetchall()
+            top_conversations = conn.execute(
+                """
+                SELECT conversation_id, COUNT(*) AS c
+                FROM alert_events
+                WHERE conversation_id IS NOT NULL AND conversation_id != ''
+                GROUP BY conversation_id
+                ORDER BY c DESC, conversation_id ASC
+                LIMIT 5
+                """
+            ).fetchall()
         return {
             "total_alerts": total,
             "by_severity": {row["severity"]: row["c"] for row in by_severity},
             "by_surface": {row["detection_surface"]: row["c"] for row in by_surface},
+            "by_token_type": {row["token_type"]: row["c"] for row in by_token_type},
+            "by_tenant": {row["tenant_id"]: row["c"] for row in by_tenant},
+            "top_conversations": [
+                {"conversation_id": row["conversation_id"], "count": row["c"]}
+                for row in top_conversations
+            ],
         }
 
     def purge_alerts_older_than(self, *, days: int) -> int:
@@ -247,6 +303,45 @@ class CanaryRegistry:
             with sqlite3.connect(str(dest)) as dest_conn:
                 src_conn.backup(dest_conn)
         return dest.stat().st_size
+
+    def set_setting(self, key: str, value: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (key, value),
+            )
+
+    def get_setting(self, key: str) -> str | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else None
+
+    def settings(self) -> dict[str, str]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT key, value FROM app_settings").fetchall()
+        return {row["key"]: row["value"] for row in rows}
+
+    def record_audit(self, action: str, details: dict) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO audit_events (ts, action, details) VALUES (?, ?, ?)",
+                (
+                    datetime.now(timezone.utc).isoformat(),
+                    action,
+                    json.dumps(details),
+                ),
+            )
+
+    def list_audit(self, limit: int = 100) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT ts, action, details FROM audit_events ORDER BY ts DESC LIMIT ?",
+                (max(1, limit),),
+            ).fetchall()
+        return [
+            {"ts": row["ts"], "action": row["action"], "details": json.loads(row["details"])}
+            for row in rows
+        ]
 
     def doctor(self) -> dict:
         checks = {
@@ -304,4 +399,5 @@ class CanaryRegistry:
             detection_surface=row["detection_surface"],
             incident_id=row["incident_id"],
             correlation_count=int(row["correlation_count"]),
+            tenant_id=row["tenant_id"],
         )

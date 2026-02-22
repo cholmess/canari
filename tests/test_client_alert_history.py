@@ -17,3 +17,5 @@ def test_client_alert_history_and_stats(tmp_path):
     stats = honey.alert_stats()
     assert stats["total_alerts"] == 1
     assert "critical" in stats["by_severity"]
+    assert "stripe_key" in stats["by_token_type"]
+    assert stats["top_conversations"][0]["conversation_id"] == "conv-a"

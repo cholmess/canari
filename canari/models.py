@@ -64,3 +64,4 @@ class AlertEvent(BaseModel):
     detection_surface: str = "output"
     incident_id: str | None = None
     correlation_count: int = 1
+    tenant_id: str | None = None

@@ -18,7 +18,16 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("token-stats", help="Show token registry stats")
     sub.add_parser("alert-stats", help="Show alert stats")
     sub.add_parser("alerter-health", help="Show alert dispatcher channel health counters")
+    p_audit = sub.add_parser("audit-log", help="Show administrative audit log")
+    p_audit.add_argument("--limit", type=int, default=50)
     sub.add_parser("doctor", help="Run local DB/schema diagnostics")
+    p_policy = sub.add_parser("policy", help="Show or set persisted dispatch policy")
+    p_policy_sub = p_policy.add_subparsers(dest="policy_cmd", required=True)
+    p_policy_sub.add_parser("show")
+    p_policy_set = p_policy_sub.add_parser("set")
+    p_policy_set.add_argument("--min-severity", default=None, choices=["low", "medium", "high", "critical"])
+    p_policy_set.add_argument("--rate-window", type=int, default=None)
+    p_policy_set.add_argument("--rate-max", type=int, default=None)
     p_seed = sub.add_parser("seed", help="Generate and store canary tokens")
     p_seed.add_argument("--n", type=int, default=1)
     p_seed.add_argument("--types", default="api_key")
@@ -32,6 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_alerts.add_argument("--surface", default=None)
     p_alerts.add_argument("--conversation", default=None)
     p_alerts.add_argument("--incident", default=None)
+    p_alerts.add_argument("--tenant", default=None)
     p_alerts.add_argument("--since", default=None, help="ISO8601 lower bound for triggered_at")
     p_alerts.add_argument("--until", default=None, help="ISO8601 upper bound for triggered_at")
 
@@ -40,11 +50,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_report = sub.add_parser("incident-report", help="Show incident timeline report")
     p_report.add_argument("incident_id")
+    p_dash = sub.add_parser("serve-dashboard", help="Serve local dashboard and API")
+    p_dash.add_argument("--host", default="127.0.0.1")
+    p_dash.add_argument("--port", type=int, default=8080)
+    p_dash.add_argument("--api-token", default=None, help="Optional token for /api/* auth")
+    p_dash.add_argument("--check", action="store_true", help="Start and immediately stop (CI health check)")
     p_replay = sub.add_parser("incident-replay", help="Write one incident timeline to JSONL")
     p_replay.add_argument("--incident", required=True)
     p_replay.add_argument("--out", required=True)
     p_summary = sub.add_parser("forensic-summary", help="Show global forensic summary")
     p_summary.add_argument("--limit", type=int, default=5000)
+    p_feed = sub.add_parser("threat-feed", help="Build anonymized local threat-intel feed")
+    p_feed.add_argument("--limit", type=int, default=5000)
 
     p_export = sub.add_parser("export", help="Export alerts to JSONL or CSV")
     p_export.add_argument("--format", choices=["jsonl", "csv"], required=True)
@@ -54,8 +71,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_export.add_argument("--surface", default=None)
     p_export.add_argument("--conversation", default=None)
     p_export.add_argument("--incident", default=None)
+    p_export.add_argument("--tenant", default=None)
     p_export.add_argument("--since", default=None, help="ISO8601 lower bound for triggered_at")
     p_export.add_argument("--until", default=None, help="ISO8601 upper bound for triggered_at")
+    p_export.add_argument("--redact", action="store_true", help="Redact canary values in exported output")
 
     p_purge = sub.add_parser("purge-alerts", help="Delete old alert events from local journal")
     p_purge.add_argument("--older-than-days", type=int, required=True)
@@ -87,9 +106,24 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "alerter-health":
         print(encoder(honey.alerter_health()))
         return 0
+    if args.cmd == "audit-log":
+        print(encoder(honey.audit_log(limit=args.limit)))
+        return 0
     if args.cmd == "doctor":
         print(encoder(honey.doctor()))
         return 0
+    if args.cmd == "policy":
+        if args.policy_cmd == "show":
+            print(encoder(honey.policy()))
+            return 0
+        if args.policy_cmd == "set":
+            if args.min_severity is not None:
+                honey.set_min_dispatch_severity(args.min_severity)
+            if args.rate_window is not None and args.rate_max is not None:
+                honey.set_alert_rate_limit(window_seconds=args.rate_window, max_dispatches=args.rate_max)
+            honey.persist_policy()
+            print(encoder({"saved": True, "policy": honey.policy()}))
+            return 0
     if args.cmd == "seed":
         token_types = [t.strip() for t in args.types.split(",") if t.strip()]
         tokens = honey.generate(n_tokens=args.n, token_types=token_types)
@@ -109,6 +143,7 @@ def main(argv: list[str] | None = None) -> int:
             incident_id=args.incident,
             since=args.since,
             until=args.until,
+            tenant_id=args.tenant,
         )
         print(encoder([a.model_dump(mode="json") for a in alerts]))
         return 0
@@ -119,6 +154,25 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "incident-report":
         print(encoder(honey.incident_report(args.incident_id)))
         return 0
+    if args.cmd == "serve-dashboard":
+        server = honey.create_dashboard_server(host=args.host, port=args.port, api_token=args.api_token)
+        try:
+            host, port = server.start()
+        except OSError as exc:
+            print(encoder({"error": "dashboard_bind_failed", "detail": str(exc)}))
+            return 1
+        print(encoder({"url": f"http://{host}:{port}", "host": host, "port": port}))
+        if args.check:
+            server.stop()
+            return 0
+        try:
+            import time
+
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            server.stop()
+            return 0
     if args.cmd == "incident-replay":
         alerts = honey.alert_history(limit=5000, incident_id=args.incident)
         out = Path(args.out)
@@ -131,6 +185,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "forensic-summary":
         print(encoder(honey.forensic_summary(limit=args.limit)))
         return 0
+    if args.cmd == "threat-feed":
+        print(encoder(honey.local_threat_feed(limit=args.limit)))
+        return 0
     if args.cmd == "export":
         if args.format == "jsonl":
             n = honey.export_alerts_jsonl(
@@ -142,6 +199,8 @@ def main(argv: list[str] | None = None) -> int:
                 incident_id=args.incident,
                 since=args.since,
                 until=args.until,
+                redact=args.redact,
+                tenant_id=args.tenant,
             )
         else:
             n = honey.export_alerts_csv(
@@ -153,6 +212,8 @@ def main(argv: list[str] | None = None) -> int:
                 incident_id=args.incident,
                 since=args.since,
                 until=args.until,
+                redact=args.redact,
+                tenant_id=args.tenant,
             )
         print(encoder({"exported": n, "path": args.out, "format": args.format}))
         return 0

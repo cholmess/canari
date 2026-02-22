@@ -40,6 +40,11 @@ print(alerts)
 - Built-in CLI (`canari` or `python -m canari`)
 - Alert journal retention (`purge_alerts_older_than`)
 - Optional alert dispatch rate limiting (`set_alert_rate_limit`)
+- Local dashboard server (`serve-dashboard`)
+- Local threat-intel feed (`threat-feed`)
+- Webhook integrity signing (`signing_secret` -> `X-Canari-Signature`)
+- Default tenant context (`set_default_tenant`) for multi-tenant apps
+- Administrative audit log (`audit-log`)
 
 ## Integration patterns
 
@@ -155,6 +160,8 @@ Alert journal:
 alerts = honey.alert_history(limit=25, severity="critical")
 stats = honey.alert_stats()
 print(len(alerts), stats["total_alerts"])
+print(stats["by_token_type"], stats["top_conversations"])
+print(stats["by_tenant"])
 ```
 
 Rate limit dispatch noise:
@@ -163,6 +170,14 @@ Rate limit dispatch noise:
 honey.set_alert_rate_limit(window_seconds=60, max_dispatches=3)
 # ...
 honey.disable_alert_rate_limit()
+```
+
+Default tenant context:
+
+```python
+honey.set_default_tenant("acme-prod")
+# alerts generated without explicit tenant_id inherit this tenant
+honey.clear_default_tenant()
 ```
 
 Forensic reports:
@@ -180,6 +195,21 @@ honey.export_alerts_jsonl("/tmp/canari-alerts.jsonl", severity="critical")
 honey.export_alerts_csv("/tmp/canari-alerts.csv", detection_surface="network_egress")
 ```
 
+Signed webhooks:
+
+```python
+honey.alerter.add_webhook(
+    "https://example.com/canari",
+    signing_secret="replace-with-strong-secret",
+)
+```
+
+Receiver-side verification:
+
+```python
+is_valid = canari.AlertDispatcher.verify_signature(payload, headers, "replace-with-strong-secret")
+```
+
 CLI usage:
 
 ```bash
@@ -187,20 +217,28 @@ canari --db canari.db token-stats
 canari --db canari.db --compact token-stats
 canari --db canari.db alert-stats
 canari --db canari.db alerter-health
+canari --db canari.db audit-log --limit 50
 canari --db canari.db doctor
+canari --db canari.db policy show
+canari --db canari.db policy set --min-severity high --rate-window 120 --rate-max 4
 canari --db canari.db seed --n 5 --types api_key,email,stripe_key
 canari --db canari.db rotate-canaries --n 5 --types api_key,email
 canari --db canari.db alerts --limit 20 --severity critical
 canari --db canari.db alerts --incident inc-conv-123-456
+canari --db canari.db alerts --tenant acme-prod --limit 50
 canari --db canari.db alerts --since 2026-02-01T00:00:00+00:00 --until 2026-02-28T23:59:59+00:00
 canari --db canari.db incidents --limit 20
 canari --db canari.db forensic-summary --limit 5000
+canari --db canari.db threat-feed --limit 5000
 canari --db canari.db incident-replay --incident inc-conv-123-456 --out /tmp/incident.jsonl
 canari --db canari.db scan-text --text "leak sk_test_CANARI_x" --conversation conv-1
 canari --db canari.db export --format jsonl --out /tmp/canari-alerts.jsonl
 canari --db canari.db export --format csv --out /tmp/canari-alerts.csv --since 2026-02-01T00:00:00+00:00
+canari --db canari.db export --format jsonl --out /tmp/canari-redacted.jsonl --redact
 canari --db canari.db purge-alerts --older-than-days 30
 canari --db canari.db backup-db --out /tmp/canari-backup.db
+canari --db canari.db serve-dashboard --host 127.0.0.1 --port 8080
+canari --db canari.db serve-dashboard --host 127.0.0.1 --port 8080 --api-token secret123
 ```
 
 ## CI and release checks

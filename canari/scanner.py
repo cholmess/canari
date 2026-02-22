@@ -100,6 +100,7 @@ class OutputScanner:
                         f"Assessment={assessment.reason}. Injection-to-trigger interval={interval}."
                     ),
                     detection_surface="output",
+                    tenant_id=(context.get("session_metadata", {}) or {}).get("tenant_id"),
                 )
             )
         return events

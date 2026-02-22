@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import time
 from datetime import timezone
@@ -52,15 +54,19 @@ class AlertDispatcher:
         *,
         retries: int = 1,
         backoff_seconds: float = 0.25,
+        signing_secret: str | None = None,
     ) -> None:
         hdrs = headers or {}
 
         def _send(event: AlertEvent) -> None:
             payload = self.build_payload(event)
+            request_headers = dict(hdrs)
+            if signing_secret:
+                request_headers.update(self._sign_headers(payload, signing_secret))
             self._post_with_retry(
                 url=url,
                 payload=payload,
-                headers=hdrs,
+                headers=request_headers,
                 retries=retries,
                 backoff_seconds=backoff_seconds,
             )
@@ -154,3 +160,20 @@ class AlertDispatcher:
                     self._sleep(backoff_seconds)
         if last_err is not None:
             raise last_err
+
+    @staticmethod
+    def _sign_headers(payload: dict, secret: str) -> dict:
+        body = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+        signature = hmac.new(secret.encode("utf-8"), body.encode("utf-8"), hashlib.sha256).hexdigest()
+        return {
+            "X-Canari-Signature": f"sha256={signature}",
+            "X-Canari-Signature-Version": "v1",
+        }
+
+    @staticmethod
+    def verify_signature(payload: dict, headers: dict, secret: str) -> bool:
+        provided = headers.get("X-Canari-Signature", "")
+        if not provided.startswith("sha256="):
+            return False
+        expected = AlertDispatcher._sign_headers(payload, secret)["X-Canari-Signature"]
+        return hmac.compare_digest(provided, expected)
