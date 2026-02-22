@@ -4,5 +4,8 @@ __pycache__/
 .pytest_cache/
 canari.db
 *.egg-info/
+build/
+dist/
 CANARI_FIX_PLAN.md
 examples/attack_demo/.env
+.pypirc

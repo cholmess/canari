@@ -1,0 +1,14 @@
+[distutils]
+index-servers =
+  pypi
+  testpypi
+
+[pypi]
+repository = https://upload.pypi.org/legacy/
+username = __token__
+password = pypi-REPLACE_WITH_REAL_PYPI_TOKEN
+
+[testpypi]
+repository = https://test.pypi.org/legacy/
+username = __token__
+password = pypi-REPLACE_WITH_REAL_TESTPYPI_TOKEN

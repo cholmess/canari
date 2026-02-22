@@ -30,14 +30,18 @@ Date: 2026-02-22
 - [ ] Publish to TestPyPI and PyPI (`twine upload ...`) from a network-enabled environment.
 - [ ] Render demo GIF from `examples/attack_demo/attack_demo.tape` once `vhs` is installed.
 - [ ] Validate attack demo end-to-end with a real `OPENAI_API_KEY`.
+- [ ] Fill `.pypirc` credentials (template in `.pypirc.example`).
 
 ## Exact closeout commands
 
 ```bash
+cp .pypirc.example .pypirc
+# edit .pypirc with real tokens
+
 python -m pip install build
 python -m build
-twine upload --repository testpypi dist/*
-twine upload dist/*
+twine upload --config-file .pypirc --repository testpypi dist/*
+twine upload --config-file .pypirc --repository pypi dist/*
 
 # GIF
 vhs examples/attack_demo/attack_demo.tape
