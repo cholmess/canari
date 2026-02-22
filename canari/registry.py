@@ -178,6 +178,7 @@ class CanaryRegistry:
         severity: str | None = None,
         detection_surface: str | None = None,
         conversation_id: str | None = None,
+        incident_id: str | None = None,
     ) -> list[AlertEvent]:
         clauses = []
         params: list = []
@@ -190,6 +191,9 @@ class CanaryRegistry:
         if conversation_id:
             clauses.append("conversation_id = ?")
             params.append(conversation_id)
+        if incident_id:
+            clauses.append("incident_id = ?")
+            params.append(incident_id)
 
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         sql = f"""

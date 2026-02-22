@@ -8,6 +8,7 @@ from canari.integrations import inject_canaries_into_index, wrap_chain, wrap_que
 from canari.injector import inject_as_document, inject_into_system_prompt, wrap_context_assembler
 from canari.monitor import EgressMonitor
 from canari.models import AlertEvent, CanaryToken, InjectionStrategy, TokenType
+from canari.reporting import ForensicReporter
 from canari.registry import CanaryRegistry
 from canari.scanner import OutputScanner
 
@@ -21,6 +22,7 @@ class CanariClient:
         self.scanner = OutputScanner(self.registry)
         self.egress_monitor = EgressMonitor(self.registry)
         self.incidents = IncidentManager()
+        self.reporter = ForensicReporter(self.registry)
         self.alerter = AlertDispatcher(canari_version=__version__)
         self.alerter.add_stdout()
 
@@ -141,16 +143,24 @@ class CanariClient:
         severity: str | None = None,
         detection_surface: str | None = None,
         conversation_id: str | None = None,
+        incident_id: str | None = None,
     ):
         return self.registry.list_alerts(
             limit=limit,
             severity=severity,
             detection_surface=detection_surface,
             conversation_id=conversation_id,
+            incident_id=incident_id,
         )
 
     def alert_stats(self) -> dict:
         return self.registry.alert_stats()
+
+    def forensic_summary(self, limit: int = 5000) -> dict:
+        return self.reporter.forensic_summary(limit=limit)
+
+    def incident_report(self, incident_id: str) -> dict:
+        return self.reporter.incident_report(incident_id)
 
     def recent_incidents(self, limit: int = 50):
         return self.incidents.recent_incidents(limit=limit)
@@ -198,6 +208,7 @@ __all__ = [
     "OutputScanner",
     "TokenType",
     "EgressMonitor",
+    "ForensicReporter",
     "wrap_runnable",
     "wrap_chain",
     "wrap_query_engine",

@@ -35,6 +35,7 @@ print(alerts)
 - Registry exposure stats (`total/active/by_type/by_strategy`)
 - Conversation-level correlation (`incident_id`, `correlation_count`) for repeated/multi-surface attacks
 - Local alert journal in SQLite (`alert_history`, `alert_stats`)
+- Forensic reporting (`forensic_summary`, `incident_report`)
 
 ## Integration patterns
 
@@ -150,6 +151,14 @@ Alert journal:
 alerts = honey.alert_history(limit=25, severity="critical")
 stats = honey.alert_stats()
 print(len(alerts), stats["total_alerts"])
+```
+
+Forensic reports:
+
+```python
+summary = honey.forensic_summary(limit=1000)
+incident = honey.incident_report("inc-conv-123-456")
+print(summary["alerts"]["total_alerts"], incident["found"])
 ```
 
 ## CI and release checks
