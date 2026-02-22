@@ -19,12 +19,6 @@ target, instrument it, and alert on contact. If it fires, it's a breach.
 
 ![Canari attack demo](docs/assets/attack-demo.gif)
 
-Render and add the GIF from `examples/attack_demo/attack_demo.tape`:
-
-```bash
-vhs examples/attack_demo/attack_demo.tape
-```
-
 Expected output center-frame:
 
 ```text
